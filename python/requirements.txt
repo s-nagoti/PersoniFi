@@ -1,6 +1,16 @@
-# Python dependencies for PersoniFi transaction parser
+# Python dependencies for PersoniFi FastAPI Backend
 # Install with: pip install -r requirements.txt
 
+# FastAPI and server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+slowapi>=0.1.9
+python-multipart>=0.0.6
+
+# Data processing
 pandas>=2.0.0
 openpyxl>=3.1.0
 python-dateutil>=2.8.0
+
+# Development (optional)
+python-dotenv>=1.0.0

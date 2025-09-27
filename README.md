@@ -1,6 +1,6 @@
 # PersoniFi Backend
 
-A Node.js + Express backend service for parsing bank and credit card statements from CSV and Excel files. The service extracts transaction data and returns it in a structured JSON format for visualization and AI analysis.
+A modern FastAPI backend service for parsing bank and credit card statements from CSV and Excel files. The service extracts transaction data and returns it in a structured JSON format for visualization and AI analysis.
 
 ## Features
 
@@ -8,23 +8,24 @@ A Node.js + Express backend service for parsing bank and credit card statements 
 - 🔍 **Smart Parsing**: Automatically detects column mappings for common bank statement formats
 - 📊 **Structured Output**: Returns transactions in standardized JSON format
 - 🛡️ **Error Handling**: Comprehensive validation and error handling
-- 🔒 **Security**: Rate limiting, file type validation, and security headers
-- 🐍 **Python Integration**: Uses Python (Pandas) for robust file parsing
+- 🔒 **Security**: Rate limiting, file type validation, and CORS protection
+- 🐍 **Pure Python**: FastAPI + Pandas for robust file parsing
+- 📚 **Auto Documentation**: Built-in Swagger UI and ReDoc
 
 ## Tech Stack
 
-- **Backend**: Node.js + Express.js
-- **File Parsing**: Python + Pandas
-- **Security**: Helmet, CORS, Rate Limiting
-- **File Upload**: Multer
+- **Backend**: FastAPI (Python)
+- **File Parsing**: Pandas + Python
+- **Security**: SlowAPI Rate Limiting, CORS
+- **File Upload**: FastAPI native multipart support
+- **Server**: Uvicorn ASGI server
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
 - Python (v3.8 or higher)
-- npm or yarn
+- pip package manager
 
 ### Installation
 
@@ -34,26 +35,28 @@ A Node.js + Express backend service for parsing bank and credit card statements 
    cd PersoniFi
    ```
 
-2. **Install Node.js dependencies:**
+2. **Install Python dependencies:**
    ```bash
-   npm install
+   pip install -r python/requirements.txt
    ```
 
-3. **Install Python dependencies:**
+3. **Start the server:**
    ```bash
-   cd python
-   pip install -r requirements.txt
-   cd ..
-   ```
-
-4. **Start the server:**
-   ```bash
-   npm start
-   # or for development with auto-reload:
-   npm run dev
+   python start_server.py
+   # or directly:
+   python main.py
+   # or with uvicorn:
+   uvicorn main:app --reload --host 0.0.0.0 --port 3000
    ```
 
 The server will start on `http://localhost:3000`
+
+### API Documentation
+
+Once the server is running, you can access:
+- **Swagger UI**: http://localhost:3000/docs
+- **ReDoc**: http://localhost:3000/redoc
+- **OpenAPI JSON**: http://localhost:3000/openapi.json
 
 ## API Endpoints
 
