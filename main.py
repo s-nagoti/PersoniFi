@@ -6,24 +6,39 @@ Features:
 - File upload with validation
 - Automatic transaction parsing
 - Structured JSON responses
+- Database storage with Supabase integration
 - Built-in API documentation
 - Rate limiting and security
 - Error handling
+- Modular parsing and saving functions for reusability
+
+API Endpoints:
+- GET /api/health: Health check
+- GET /api/formats: Supported file formats and requirements
+- POST /api/parse-transactions: Parse uploaded files and return structured data
+- POST /api/save-transactions: Save structured transaction data to database
+- POST /api/upload-and-save: Combined endpoint for file upload, parsing, and saving
 
 Dependencies:
 - fastapi: Modern web framework
 - uvicorn: ASGI server
 - slowapi: Rate limiting
 - python-multipart: File upload support
+- supabase: Database client
+- pandas: Data processing
+- openpyxl: Excel file support
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from pydantic import BaseModel, Field, validator
+from supabase import create_client, Client
+from dotenv import load_dotenv
 import os
 import tempfile
 import shutil
@@ -35,9 +50,70 @@ import logging
 # Import our existing parser
 from python.transaction_parser import parse_transactions
 
+# Load environment variables from .env file
+load_dotenv()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Environment variables for Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+
+# Initialize Supabase client
+supabase: Optional[Client] = None
+if SUPABASE_URL and SUPABASE_ANON_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    logger.info("Supabase client initialized successfully")
+else:
+    logger.warning("Supabase credentials not found. Set SUPABASE_URL and SUPABASE_ANON_KEY environment variables.")
+
+# Data Models for Transaction API
+class Transaction(BaseModel):
+    """Individual transaction data model"""
+    date: str = Field(..., description="Transaction date in YYYY-MM-DD format")
+    merchant: str = Field(..., description="Merchant name or transaction description")
+    amount: float = Field(..., description="Transaction amount")
+    category: Optional[str] = Field(None, description="Transaction category")
+    
+    @validator('date')
+    def validate_date(cls, v):
+        """Validate date format"""
+        try:
+            datetime.strptime(v, '%Y-%m-%d')
+            return v
+        except ValueError:
+            raise ValueError('Date must be in YYYY-MM-DD format')
+    
+    @validator('amount')
+    def validate_amount(cls, v):
+        """Validate amount is a valid number"""
+        if not isinstance(v, (int, float)):
+            raise ValueError('Amount must be a number')
+        return float(v)
+
+class TransactionData(BaseModel):
+    """Transaction data array model"""
+    data: List[Transaction] = Field(..., description="Array of transaction objects")
+
+class SaveTransactionsRequest(BaseModel):
+    """Request model for saving transactions"""
+    success: bool = Field(..., description="Success flag from parser")
+    data: List[Transaction] = Field(..., description="Array of transaction objects")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+class SaveTransactionsResponse(BaseModel):
+    """Response model for save transactions endpoint"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    message: str = Field(..., description="Response message")
+    transactions_inserted: int = Field(..., description="Number of transactions successfully inserted")
+
+class UploadAndSaveResponse(BaseModel):
+    """Response model for upload-and-save endpoint"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    inserted: int = Field(..., description="Number of transactions successfully saved")
+    errors: List[str] = Field(default=[], description="List of any failed insertions or errors")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -83,6 +159,157 @@ ALLOWED_MIME_TYPES = {
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 }
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Reusable parsing function
+async def parse_uploaded_file(file: UploadFile) -> Dict[str, Any]:
+    """
+    Parse an uploaded file and return structured transaction data.
+    
+    Args:
+        file: The uploaded file
+        
+    Returns:
+        Dictionary containing parsed transactions and metadata
+        
+    Raises:
+        HTTPException: If file validation or parsing fails
+    """
+    logger.info(f"Parsing uploaded file: {file.filename} ({file.size} bytes)")
+    
+    # Validate file
+    validate_file(file)
+    
+    # Create temporary file
+    temp_file_path = None
+    
+    try:
+        # Save uploaded file to temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
+            # Read file content in chunks to handle large files
+            content = await file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+        
+        logger.info(f"Saved file to temporary location: {temp_file_path}")
+        
+        # Parse the file using our existing parser
+        result = parse_transactions(temp_file_path)
+        
+        if result["success"]:
+            # Add metadata about the upload
+            result["metadata"]["original_filename"] = file.filename
+            result["metadata"]["file_size"] = file.size
+            result["metadata"]["upload_timestamp"] = datetime.now().isoformat()
+            result["metadata"]["processing_time"] = datetime.now().isoformat()
+            
+            logger.info(f"Successfully parsed {len(result['transactions'])} transactions from {file.filename}")
+            
+            return {
+                "success": True,
+                "transactions": result["transactions"],
+                "metadata": result["metadata"]
+            }
+        else:
+            logger.error(f"Parsing failed for {file.filename}: {result['error']}")
+            raise HTTPException(
+                status_code=400,
+                detail=result["error"]
+            )
+    
+    finally:
+        # Clean up temporary file
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+                logger.debug(f"Cleaned up temporary file: {temp_file_path}")
+            except Exception as e:
+                logger.error(f"Failed to clean up temporary file {temp_file_path}: {e}")
+
+# Reusable saving function
+async def save_transactions_to_db(transactions: List[Transaction]) -> Dict[str, Any]:
+    """
+    Save transactions to Supabase database.
+    
+    Args:
+        transactions: List of transaction objects to save
+        
+    Returns:
+        Dictionary containing save results and any errors
+        
+    Raises:
+        HTTPException: If database connection or validation fails
+    """
+    logger.info(f"Saving {len(transactions)} transactions to database")
+    
+    # Validate Supabase connection
+    if not supabase:
+        logger.error("Supabase client not initialized - missing environment variables")
+        raise HTTPException(
+            status_code=500,
+            detail="Database connection not available. Please check server configuration."
+        )
+    
+    # Validate input data
+    if not transactions:
+        raise HTTPException(
+            status_code=400,
+            detail="No transaction data provided"
+        )
+    
+    try:
+        # Prepare transactions for database insertion
+        transactions_to_insert = []
+        errors = []
+        
+        for i, transaction in enumerate(transactions):
+            try:
+                # Convert transaction to database format
+                db_transaction = {
+                    "date": transaction.date,
+                    "merchant": transaction.merchant,
+                    "amount": transaction.amount,
+                    "category": transaction.category
+                }
+                
+                transactions_to_insert.append(db_transaction)
+                
+            except Exception as e:
+                error_msg = f"Transaction {i+1}: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+        
+        # Insert transactions into Supabase
+        logger.info(f"Inserting {len(transactions_to_insert)} transactions into database")
+        
+        # Use Supabase client to insert data
+        result = supabase.table('transactions').insert(transactions_to_insert).execute()
+        
+        # Check if insertion was successful
+        if hasattr(result, 'data') and result.data:
+            inserted_count = len(result.data)
+            logger.info(f"Successfully inserted {inserted_count} transactions")
+            
+            return {
+                "success": True,
+                "inserted": inserted_count,
+                "errors": errors
+            }
+        else:
+            logger.error(f"Database insertion failed - no data returned")
+            errors.append("Failed to insert transactions into database")
+            return {
+                "success": False,
+                "inserted": 0,
+                "errors": errors
+            }
+    
+    except Exception as e:
+        logger.error(f"Unexpected error saving transactions: {str(e)}")
+        return {
+            "success": False,
+            "inserted": 0,
+            "errors": [f"Internal server error: {str(e)}"]
+        }
 
 def validate_file(file: UploadFile) -> None:
     """
@@ -196,50 +423,15 @@ async def parse_transactions_endpoint(
     
     logger.info(f"Received file upload: {file.filename} ({file.size} bytes)")
     
-    # Validate file
     try:
-        validate_file(file)
-    except HTTPException as e:
-        logger.error(f"File validation failed: {e.detail}")
-        raise e
-    
-    # Create temporary file
-    temp_file = None
-    temp_file_path = None
-    
-    try:
-        # Save uploaded file to temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
-            # Read file content in chunks to handle large files
-            content = await file.read()
-            temp_file.write(content)
-            temp_file_path = temp_file.name
+        # Use our reusable parsing function
+        result = await parse_uploaded_file(file)
         
-        logger.info(f"Saved file to temporary location: {temp_file_path}")
-        
-        # Parse the file using our existing parser
-        result = parse_transactions(temp_file_path)
-        
-        if result["success"]:
-            # Add metadata about the upload
-            result["metadata"]["original_filename"] = file.filename
-            result["metadata"]["file_size"] = file.size
-            result["metadata"]["upload_timestamp"] = datetime.now().isoformat()
-            result["metadata"]["processing_time"] = datetime.now().isoformat()
-            
-            logger.info(f"Successfully parsed {len(result['transactions'])} transactions from {file.filename}")
-            
-            return {
-                "success": True,
-                "data": result["transactions"],
-                "metadata": result["metadata"]
-            }
-        else:
-            logger.error(f"Parsing failed for {file.filename}: {result['error']}")
-            raise HTTPException(
-                status_code=400,
-                detail=result["error"]
-            )
+        return {
+            "success": True,
+            "data": result["transactions"],
+            "metadata": result["metadata"]
+        }
     
     except HTTPException:
         raise
@@ -250,14 +442,172 @@ async def parse_transactions_endpoint(
             detail=f"Internal server error: {str(e)}"
         )
     
-    finally:
-        # Clean up temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
+@app.post("/api/upload-and-save", response_model=UploadAndSaveResponse)
+@limiter.limit("30/minute")
+async def upload_and_save_endpoint(
+    request: Request,
+    file: UploadFile = File(..., description="CSV or Excel file containing bank/credit card transactions")
+):
+    """
+    Upload a transaction file and save the parsed transactions to the database.
+    
+    This endpoint combines file parsing and database storage in a single operation.
+    It accepts a file upload, then internally calls the parsing logic
+    from /api/parse-transactions and the saving logic from /api/save-transactions.
+    
+    **Environment Variables Required:**
+    - SUPABASE_URL: Your Supabase project URL
+    - SUPABASE_ANON_KEY: Your Supabase anonymous key
+    
+    **Supported file types:**
+    - CSV files (.csv)
+    - Excel files (.xlsx, .xls)
+    
+    **Parameters:**
+    - `file`: CSV or Excel file containing transactions
+    
+    **Maximum file size:** 10MB
+    
+    **Response format:**
+    - `success`: Boolean indicating if the operation was successful
+    - `inserted`: Number of transactions successfully saved to database
+    - `errors`: Array of any error messages from failed insertions
+    
+    **Error Handling:**
+    - Invalid file types are rejected
+    - Parsing errors are returned in the errors array
+    - Database connection issues are handled gracefully
+    - Individual transaction validation errors are tracked
+    """
+    
+    logger.info(f"Received upload-and-save request: {file.filename}")
+    
+    try:
+        # Step 1: Parse the uploaded file using our reusable parsing function
+        parse_result = await parse_uploaded_file(file)
+        
+        if not parse_result["success"]:
+            return UploadAndSaveResponse(
+                success=False,
+                inserted=0,
+                errors=[f"Parsing failed: {parse_result.get('error', 'Unknown error')}"]
+            )
+        
+        # Convert parsed transactions to Transaction objects for validation
+        transactions = []
+        parsing_errors = []
+        
+        for i, trans_data in enumerate(parse_result["transactions"]):
             try:
-                os.unlink(temp_file_path)
-                logger.debug(f"Cleaned up temporary file: {temp_file_path}")
+                transaction = Transaction(
+                    date=trans_data["date"],
+                    merchant=trans_data["merchant"],
+                    amount=trans_data["amount"],
+                    category=trans_data.get("category")
+                )
+                transactions.append(transaction)
             except Exception as e:
-                logger.error(f"Failed to clean up temporary file {temp_file_path}: {e}")
+                parsing_errors.append(f"Transaction {i+1} validation failed: {str(e)}")
+        
+        # If we have parsing errors, include them in the response
+        if parsing_errors:
+            logger.warning(f"Found {len(parsing_errors)} transaction validation errors")
+        
+        # Step 2: Save transactions to database using our reusable saving function
+        save_result = await save_transactions_to_db(transactions)
+        
+        # Combine parsing errors with saving errors
+        all_errors = parsing_errors + save_result.get("errors", [])
+        
+        # Determine overall success
+        overall_success = save_result["success"] and len(parsing_errors) == 0
+        
+        logger.info(f"Upload-and-save completed: {save_result['inserted']} transactions inserted, {len(all_errors)} errors")
+        
+        return UploadAndSaveResponse(
+            success=overall_success,
+            inserted=save_result["inserted"],
+            errors=all_errors
+        )
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions (validation errors, etc.)
+        raise
+    
+    except Exception as e:
+        logger.error(f"Unexpected error in upload-and-save: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@app.post("/api/save-transactions", response_model=SaveTransactionsResponse)
+@limiter.limit("50/minute")
+async def save_transactions_endpoint(
+    request: Request,
+    transaction_request: SaveTransactionsRequest
+):
+    """
+    Save parsed transactions to Supabase database.
+    
+    This endpoint accepts structured transaction data and stores each transaction
+    in the Supabase 'transactions' table.
+    
+    **Request Body:**
+    - `success`: Boolean - Success flag from parser
+    - `data`: Array of transaction objects
+    - `metadata`: Optional metadata object
+    
+    **Transaction Object Structure:**
+    - `date`: String - Date in YYYY-MM-DD format
+    - `merchant`: String - Merchant name or description
+    - `amount`: Float - Transaction amount
+    - `category`: String (optional) - Transaction category
+    
+    **Response:**
+    - `success`: Boolean - Whether the operation was successful
+    - `message`: String - Response message
+    - `transactions_inserted`: Integer - Number of transactions inserted
+    
+    **Error Handling:**
+    - Validates Supabase connection
+    - Validates transaction data format
+    - Handles database insertion errors
+    - Returns detailed error messages
+    """
+    
+    logger.info(f"Received request to save {len(transaction_request.data)} transactions")
+    
+    try:
+        # Use our reusable saving function (without user_id for backward compatibility)
+        save_result = await save_transactions_to_db(transaction_request.data)
+        
+        if save_result["success"]:
+            return SaveTransactionsResponse(
+                success=True,
+                message=f"Successfully saved {save_result['inserted']} transactions",
+                transactions_inserted=save_result["inserted"]
+            )
+        else:
+            # If there are errors, include them in the response
+            error_message = "Failed to save transactions"
+            if save_result.get("errors"):
+                error_message += f": {'; '.join(save_result['errors'][:3])}"  # Show first 3 errors
+            raise HTTPException(
+                status_code=500,
+                detail=error_message
+            )
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions (validation errors, etc.)
+        raise
+    
+    except Exception as e:
+        logger.error(f"Unexpected error saving transactions: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

@@ -7,9 +7,13 @@ Simple script to start the FastAPI development server with proper configuration.
 import uvicorn
 import sys
 import os
+from dotenv import load_dotenv
 
 def main():
     """Start the FastAPI development server"""
+    
+    # Load environment variables from .env file
+    load_dotenv()
     
     # Add current directory to Python path
     current_dir = os.path.dirname(os.path.abspath(__file__))
