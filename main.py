@@ -127,6 +127,27 @@ class GetTransactionsResponse(BaseModel):
     success: bool = Field(..., description="Whether the operation was successful")
     transactions: List[TransactionResponse] = Field(..., description="List of transactions")
 
+class DailyTrend(BaseModel):
+    """Model for daily transaction totals"""
+    date: str = Field(..., description="Date in YYYY-MM-DD format")
+    amount: float = Field(..., description="Total amount for this date")
+    
+    @validator('date')
+    def validate_date(cls, v):
+        """Validate date format"""
+        try:
+            datetime.strptime(v, '%Y-%m-%d')
+            return v
+        except ValueError:
+            raise ValueError('Date must be in YYYY-MM-DD format')
+
+class TransactionSummary(BaseModel):
+    """Response model for transaction summary endpoint"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    total_spent: float = Field(..., description="Total sum of all transaction amounts")
+    by_category: Dict[str, float] = Field(..., description="Total spent per category")
+    daily_trends: List[DailyTrend] = Field(..., description="Daily spending trends")
+
 class UploadAndSaveResponse(BaseModel):
     """Response model for upload-and-save endpoint"""
     success: bool = Field(..., description="Whether the operation was successful")
@@ -321,6 +342,108 @@ async def get_all_transactions() -> Dict[str, Any]:
         error_msg = f"Failed to fetch transactions: {str(e)}"
         logger.error(error_msg)
         return {"success": False, "transactions": [], "error": error_msg}
+
+# Reusable database function for transaction summaries
+async def get_transaction_summary(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    category: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get summary statistics for transactions with optional filtering.
+    
+    Args:
+        start_date: Optional start date filter (YYYY-MM-DD)
+        end_date: Optional end date filter (YYYY-MM-DD)
+        category: Optional category filter
+        
+    Returns:
+        Dictionary containing:
+        - success: bool - Whether the operation was successful
+        - total_spent: float - Total sum of transaction amounts
+        - by_category: Dict[str, float] - Total spent per category
+        - daily_trends: List[Dict] - Daily spending trends
+        - error: Optional[str] - Error message if operation failed
+    """
+    logger.info(f"Fetching transaction summary (start: {start_date}, end: {end_date}, category: {category})")
+    
+    if not supabase:
+        logger.error("Supabase client not initialized")
+        return {
+            "success": False,
+            "error": "Database connection not available",
+            "total_spent": 0.0,
+            "by_category": {},
+            "daily_trends": []
+        }
+    
+    try:
+        # Start building the query
+        query = supabase.table("transactions").select("*")
+        
+        # Apply filters if provided
+        if start_date:
+            query = query.gte("date", start_date)
+        if end_date:
+            query = query.lte("date", end_date)
+        if category:
+            query = query.eq("category", category)
+            
+        # Execute query
+        result = query.execute()
+        
+        if not result.data:
+            logger.warning("No transactions found for summary")
+            return {
+                "success": True,
+                "total_spent": 0.0,
+                "by_category": {},
+                "daily_trends": []
+            }
+        
+        # Process the results
+        transactions = result.data
+        
+        # Calculate total spent
+        total_spent = sum(float(t["amount"]) for t in transactions)
+        
+        # Calculate totals by category
+        by_category = {}
+        for t in transactions:
+            cat = t.get("category", "Uncategorized")
+            by_category[cat] = by_category.get(cat, 0.0) + float(t["amount"])
+        
+        # Calculate daily trends
+        daily_totals = {}
+        for t in transactions:
+            date = t["date"]
+            daily_totals[date] = daily_totals.get(date, 0.0) + float(t["amount"])
+        
+        # Convert daily totals to sorted list
+        daily_trends = [
+            {"date": date, "amount": amount}
+            for date, amount in sorted(daily_totals.items())
+        ]
+        
+        logger.info(f"Summary generated: {len(transactions)} transactions, {len(by_category)} categories")
+        
+        return {
+            "success": True,
+            "total_spent": total_spent,
+            "by_category": by_category,
+            "daily_trends": daily_trends
+        }
+        
+    except Exception as e:
+        error_msg = f"Failed to generate transaction summary: {str(e)}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg,
+            "total_spent": 0.0,
+            "by_category": {},
+            "daily_trends": []
+        }
 
 # Reusable saving function
 async def save_transactions_to_db(transactions: List[Transaction]) -> Dict[str, Any]:
@@ -563,6 +686,99 @@ async def get_transactions(request: Request):
         - Returns an empty list if no transactions are found
         - Future versions may support pagination and filtering
     """
+
+@app.get("/api/get-summary", response_model=TransactionSummary)
+@limiter.limit("100/minute")
+async def get_transaction_summary_endpoint(
+    request: Request,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    category: Optional[str] = None
+):
+    """
+    Get aggregated summary of transactions with optional filtering.
+    
+    This endpoint provides aggregated statistics about transactions,
+    including totals by category and daily trends. It's useful for:
+    - Dashboard visualizations
+    - Spending analysis
+    - Category-based reporting
+    - AI-powered insights
+    
+    Query Parameters:
+        start_date: Optional start date filter (YYYY-MM-DD)
+        end_date: Optional end date filter (YYYY-MM-DD)
+        category: Optional category filter
+    
+    Returns:
+        JSON object containing:
+        - success: Boolean indicating if the operation was successful
+        - total_spent: Total sum of all transaction amounts
+        - by_category: Dictionary of category totals
+        - daily_trends: List of daily spending totals
+        
+    Note:
+        - All amounts are in the original transaction currency
+        - Dates must be in YYYY-MM-DD format
+        - Returns zero totals if no transactions are found
+        - Category totals include an "Uncategorized" group
+    """
+    try:
+        # Validate date formats if provided
+        if start_date:
+            try:
+                datetime.strptime(start_date, '%Y-%m-%d')
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="start_date must be in YYYY-MM-DD format"
+                )
+        
+        if end_date:
+            try:
+                datetime.strptime(end_date, '%Y-%m-%d')
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="end_date must be in YYYY-MM-DD format"
+                )
+        
+        # Validate date range if both dates provided
+        if start_date and end_date and start_date > end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="start_date cannot be later than end_date"
+            )
+        
+        # Use our reusable function to fetch summary
+        result = await get_transaction_summary(
+            start_date=start_date,
+            end_date=end_date,
+            category=category
+        )
+        
+        if result["success"]:
+            return TransactionSummary(
+                success=True,
+                total_spent=result["total_spent"],
+                by_category=result["by_category"],
+                daily_trends=result["daily_trends"]
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Failed to generate summary")
+            )
+            
+    except HTTPException:
+        raise
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in get_transaction_summary: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
     try:
         # Use our reusable function to fetch transactions
         result = await get_all_transactions()
