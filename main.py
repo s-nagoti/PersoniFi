@@ -114,6 +114,19 @@ class GetCategoriesResponse(BaseModel):
     success: bool = Field(..., description="Whether the operation was successful")
     categories: List[str] = Field(..., description="List of unique transaction categories")
 
+class TransactionResponse(BaseModel):
+    """Model for a single transaction in the response"""
+    id: str = Field(..., description="Transaction UUID")
+    date: str = Field(..., description="Transaction date in YYYY-MM-DD format")
+    amount: float = Field(..., description="Transaction amount")
+    merchant: str = Field(..., description="Merchant name or description")
+    category: Optional[str] = Field(None, description="Transaction category")
+
+class GetTransactionsResponse(BaseModel):
+    """Response model for get transactions endpoint"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    transactions: List[TransactionResponse] = Field(..., description="List of transactions")
+
 class UploadAndSaveResponse(BaseModel):
     """Response model for upload-and-save endpoint"""
     success: bool = Field(..., description="Whether the operation was successful")
@@ -260,6 +273,54 @@ async def get_unique_categories() -> Dict[str, Any]:
         error_msg = f"Failed to fetch categories: {str(e)}"
         logger.error(error_msg)
         return {"success": False, "categories": [], "error": error_msg}
+
+# Reusable database functions for transactions
+async def get_all_transactions() -> Dict[str, Any]:
+    """
+    Fetch all transactions from the database.
+    
+    Returns:
+        Dictionary containing:
+        - success: bool - Whether the operation was successful
+        - transactions: List[Dict] - List of transaction objects
+        - error: Optional[str] - Error message if operation failed
+    """
+    logger.info("Fetching all transactions")
+    
+    if not supabase:
+        logger.error("Supabase client not initialized")
+        return {"success": False, "transactions": [], "error": "Database connection not available"}
+    
+    try:
+        # Query all transactions, ordered by date descending
+        result = supabase.table("transactions") \
+            .select("*") \
+            .order("date", desc=True) \
+            .execute()
+        
+        if result.data:
+            # Convert to response format
+            transactions = [
+                {
+                    "id": str(row["id"]),  # Convert UUID to string
+                    "date": row["date"],
+                    "amount": float(row["amount"]),  # Ensure float type
+                    "merchant": row["merchant"],
+                    "category": row.get("category")  # Optional field
+                }
+                for row in result.data
+            ]
+            
+            logger.info(f"Found {len(transactions)} transactions")
+            return {"success": True, "transactions": transactions}
+        else:
+            logger.warning("No transactions found in database")
+            return {"success": True, "transactions": []}
+        
+    except Exception as e:
+        error_msg = f"Failed to fetch transactions: {str(e)}"
+        logger.error(error_msg)
+        return {"success": False, "transactions": [], "error": error_msg}
 
 # Reusable saving function
 async def save_transactions_to_db(transactions: List[Transaction]) -> Dict[str, Any]:
@@ -470,6 +531,58 @@ async def get_categories(request: Request):
         
     except Exception as e:
         logger.error(f"Unexpected error in get_categories: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@app.get("/api/get-transactions", response_model=GetTransactionsResponse)
+@limiter.limit("50/minute")
+async def get_transactions(request: Request):
+    """
+    Get all transactions from the database.
+    
+    This endpoint returns all transactions stored in the database,
+    ordered by date (most recent first). It's useful for:
+    - Displaying transaction history
+    - Generating reports
+    - Data analysis and visualization
+    
+    Returns:
+        JSON object containing:
+        - success: Boolean indicating if the operation was successful
+        - transactions: List of transaction objects with fields:
+            - id: Transaction UUID
+            - date: Transaction date (YYYY-MM-DD)
+            - amount: Transaction amount
+            - merchant: Merchant name/description
+            - category: Optional transaction category
+            
+    Note:
+        - Transactions are ordered by date descending (newest first)
+        - Returns an empty list if no transactions are found
+        - Future versions may support pagination and filtering
+    """
+    try:
+        # Use our reusable function to fetch transactions
+        result = await get_all_transactions()
+        
+        if result["success"]:
+            return GetTransactionsResponse(
+                success=True,
+                transactions=result["transactions"]
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Failed to fetch transactions")
+            )
+            
+    except HTTPException:
+        raise
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in get_transactions: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
