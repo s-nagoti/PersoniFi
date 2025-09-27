@@ -109,6 +109,11 @@ class SaveTransactionsResponse(BaseModel):
     message: str = Field(..., description="Response message")
     transactions_inserted: int = Field(..., description="Number of transactions successfully inserted")
 
+class GetCategoriesResponse(BaseModel):
+    """Response model for get categories endpoint"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    categories: List[str] = Field(..., description="List of unique transaction categories")
+
 class UploadAndSaveResponse(BaseModel):
     """Response model for upload-and-save endpoint"""
     success: bool = Field(..., description="Whether the operation was successful")
@@ -224,6 +229,37 @@ async def parse_uploaded_file(file: UploadFile) -> Dict[str, Any]:
                 logger.debug(f"Cleaned up temporary file: {temp_file_path}")
             except Exception as e:
                 logger.error(f"Failed to clean up temporary file {temp_file_path}: {e}")
+
+# Reusable database functions
+async def get_unique_categories() -> Dict[str, Any]:
+    """
+    Fetch unique categories from the transactions table.
+    """
+    logger.info("Fetching unique transaction categories")
+    
+    if not supabase:
+        logger.error("Supabase client not initialized")
+        return {"success": False, "categories": [], "error": "Database connection not available"}
+    
+    try:
+        # Correct Supabase query for Python client
+        result = supabase.table("transactions") \
+            .select("category") \
+            .neq("category", None) \
+            .execute()
+        
+        if result.data:
+            categories = sorted(list(set(row["category"] for row in result.data if row.get("category"))))
+            logger.info(f"Found {len(categories)} unique categories")
+            return {"success": True, "categories": categories}
+        else:
+            logger.warning("No categories found in database")
+            return {"success": True, "categories": []}
+        
+    except Exception as e:
+        error_msg = f"Failed to fetch categories: {str(e)}"
+        logger.error(error_msg)
+        return {"success": False, "categories": [], "error": error_msg}
 
 # Reusable saving function
 async def save_transactions_to_db(transactions: List[Transaction]) -> Dict[str, Any]:
@@ -391,6 +427,53 @@ async def get_supported_formats():
             "category": ["category", "transaction category", "type", "transaction type"]
         }
     }
+
+@app.get("/api/get-categories", response_model=GetCategoriesResponse)
+@limiter.limit("100/minute")
+async def get_categories(request: Request):
+    """
+    Get a list of unique transaction categories from the database.
+    
+    This endpoint returns a sorted list of all unique categories that have been
+    assigned to transactions. It's useful for:
+    - Populating category dropdown menus
+    - Analyzing spending patterns
+    - Generating transaction reports
+    
+    Returns:
+        JSON object containing:
+        - success: Boolean indicating if the operation was successful
+        - categories: List of unique category strings, sorted alphabetically
+        
+    Note:
+        - Categories are case-sensitive
+        - Empty or null categories are excluded
+        - Returns an empty list if no categories are found
+    """
+    try:
+        # Use our reusable function to fetch categories
+        result = await get_unique_categories()
+        
+        if result["success"]:
+            return GetCategoriesResponse(
+                success=True,
+                categories=result["categories"]
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Failed to fetch categories")
+            )
+            
+    except HTTPException:
+        raise
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in get_categories: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 @app.post("/api/parse-transactions")
 @limiter.limit("100/minute")
