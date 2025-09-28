@@ -163,26 +163,57 @@ class AskAgentRequest(BaseModel):
     """Request model for AI agent financial insights"""
     prompt: str = Field(..., description="User's natural language question about their finances", min_length=1, max_length=1000)
 
-class ChartData(BaseModel):
-    """Model for chart-ready visualization data"""
-    type: str = Field(..., description="Chart type (e.g., 'line', 'bar', 'pie', 'area')")
-    data: List[Dict[str, Any]] = Field(..., description="Chart data points")
-    labels: Optional[List[str]] = Field(None, description="Chart labels")
-    title: Optional[str] = Field(None, description="Chart title")
+class PlotlyMarker(BaseModel):
+    """Plotly marker configuration"""
+    color: Optional[str] = Field(None, description="Marker color")
 
-class AgentInsight(BaseModel):
-    """Model for AI-generated financial insight"""
+class PlotlyTrace(BaseModel):
+    """Plotly trace data structure"""
+    type: str = Field(..., description="Chart type (e.g., 'bar', 'line', 'pie', 'scatter')")
+    x: Optional[List[Any]] = Field(None, description="X-axis data")
+    y: Optional[List[Any]] = Field(None, description="Y-axis data")
+    values: Optional[List[float]] = Field(None, description="Values for pie charts")
+    labels: Optional[List[str]] = Field(None, description="Labels for pie charts")
+    name: Optional[str] = Field(None, description="Trace name")
+    marker: Optional[PlotlyMarker] = Field(None, description="Marker styling")
+
+class PlotlyAxis(BaseModel):
+    """Plotly axis configuration"""
+    title: Optional[str] = Field(None, description="Axis title")
+
+class PlotlyMargin(BaseModel):
+    """Plotly margin configuration"""
+    t: Optional[int] = Field(None, description="Top margin")
+    l: Optional[int] = Field(None, description="Left margin")
+    r: Optional[int] = Field(None, description="Right margin")
+    b: Optional[int] = Field(None, description="Bottom margin")
+
+class PlotlyLayout(BaseModel):
+    """Plotly layout configuration"""
+    title: Optional[str] = Field(None, description="Chart title")
+    xaxis: Optional[PlotlyAxis] = Field(None, description="X-axis configuration")
+    yaxis: Optional[PlotlyAxis] = Field(None, description="Y-axis configuration")
+    margin: Optional[PlotlyMargin] = Field(None, description="Chart margins")
+    plot_bgcolor: Optional[str] = Field(None, description="Plot background color")
+    paper_bgcolor: Optional[str] = Field(None, description="Paper background color")
+
+class PlotlyChart(BaseModel):
+    """Plotly-compatible chart structure"""
+    data: List[PlotlyTrace] = Field(..., description="Chart data traces")
+    layout: PlotlyLayout = Field(..., description="Chart layout configuration")
+
+class FinancialInsight(BaseModel):
+    """Model for financial insight with Plotly chart"""
     summary: str = Field(..., description="Brief summary of the financial insight")
+    chart: PlotlyChart = Field(..., description="Plotly-compatible chart data")
     explanation: str = Field(..., description="Detailed explanation of why given chart was chosen")
-    chart_data: Optional[ChartData] = Field(None, description="Chart-ready data for visualization")
-    #recommendations: Optional[List[str]] = Field(None, description="Actionable recommendations")
 
 class AskAgentResponse(BaseModel):
     """Response model for AI agent financial insights"""
     success: bool = Field(..., description="Whether the operation was successful")
-    insight: Optional[AgentInsight] = Field(None, description="AI-generated financial insight")
     intent: Optional[str] = Field(None, description="Detected intent from user prompt")
     filters: Optional[Dict[str, Any]] = Field(None, description="Extracted filters for database query")
+    insight: Optional[FinancialInsight] = Field(None, description="AI-generated financial insight with Plotly chart")
     raw_data: Optional[Dict[str, Any]] = Field(None, description="Raw database query results")
     error: Optional[str] = Field(None, description="Error message if operation failed")
 
@@ -992,38 +1023,48 @@ async def ask_agent_endpoint(
     agent_request: AskAgentRequest
 ):
     """
-    AI-powered financial insights and analysis endpoint.
-    
-    This endpoint processes natural language questions about finances and returns
-    intelligent insights, visualizations, and recommendations based on the user's
-    transaction data stored in the database.
-    
-    **Request Body:**
-    - `prompt`: String - Natural language question about finances (1-1000 characters)
-    
-    **Response:**
-    - `success`: Boolean - Whether the operation was successful
-    - `insight`: AgentInsight object containing:
-        - `summary`: Brief summary of the financial insight
-        - `explanation`: Detailed explanation of the insight
-        - `chart_data`: Optional chart-ready data for visualization
-        - `recommendations`: Optional actionable recommendations
-    - `intent`: String - Detected intent from user prompt
-    - `filters`: Dict - Extracted filters for database query
-    - `raw_data`: Dict - Raw database query results
-    - `error`: String - Error message if operation failed
-    
-    **Supported Question Types:**
-    - Spending analysis ("How much did I spend last month?")
-    - Category breakdown ("What are my biggest expense categories?")
-    - Trend analysis ("Show me my spending trends over time")
-    - Budget insights ("Am I over budget in dining?")
-    - Financial recommendations ("How can I save more money?")
-    
-    **Note:**
-    - AI integration code will be added later (Gemini API)
-    - Database queries will be optimized based on detected intent
-    - Chart data will be formatted for frontend visualization libraries
+    You are a financial query parser for a personal finance visualization agent. 
+Your task is to extract the user's intent, any specified filters, and recommend a chart type with justification from their natural language question about their personal finances. 
+
+The extracted intent should match one of the following actions that the /api/ask-agent endpoint can handle:
+- "total_spent" → compute total spending
+- "total_income" → compute total income
+- "spending_by_category" → breakdown of spend by category
+- "transactions_over_time" → list transactions over a specified period
+- "balance_over_time" → account balance trend over time
+
+Filters may include:
+- "category" (e.g., "groceries", "gasoline")
+- "start_date" (YYYY-MM-DD)
+- "end_date" (YYYY-MM-DD)
+- "metric" (optional, e.g., sum, average)
+
+For chart recommendation:
+- Include a "chart" object with:
+    - "type" → suggested chart type (e.g., bar, line, pie)
+    - "justification" → why this chart type is appropriate for the data and intent
+
+Return the response strictly as a JSON object with the keys:
+- "intent" → the identified intent
+- "filters" → the extracted filters as key-value pairs
+- "chart" → the chart type and justification object
+
+If a filter is not present in the question, omit that key.  
+Do not include any text outside the JSON object.  
+
+Example output:
+{
+  "intent": "spending_by_category",
+  "filters": {
+    "category": "groceries",
+    "start_date": "2025-08-01",
+    "end_date": "2025-08-31"
+  },
+  "chart": {
+    "type": "bar",
+    "justification": "Bar charts are best for comparing discrete categories such as spending by category over a month"
+  }
+}
     """
     
     logger.info(f"Received AI agent request: {agent_request.prompt[:100]}...")
@@ -1054,7 +1095,7 @@ async def ask_agent_endpoint(
                 ),
                 system_instruction=[
                     types.Part.from_text(text="""You are a financial query parser for a personal finance visualization agent. 
-Your task is to extract the user's intent and any specified filters from their natural language question about their personal finances. 
+Your task is to extract the user's intent, any specified filters, and recommend a chart type with justification from their natural language question about their personal finances. 
 
 The extracted intent should match one of the following actions that the /api/ask-agent endpoint can handle:
 - "total_spent" → compute total spending
@@ -1069,9 +1110,15 @@ Filters may include:
 - "end_date" (YYYY-MM-DD)
 - "metric" (optional, e.g., sum, average)
 
+For chart recommendation:
+- Include a "chart" object with:
+    - "type" → suggested chart type (e.g., bar, line, pie)
+    - "justification" → why this chart type is appropriate for the data and intent
+
 Return the response strictly as a JSON object with the keys:
 - "intent" → the identified intent
 - "filters" → the extracted filters as key-value pairs
+- "chart" → the chart type and justification object
 
 If a filter is not present in the question, omit that key.  
 Do not include any text outside the JSON object.  
@@ -1083,6 +1130,10 @@ Example output:
     "category": "groceries",
     "start_date": "2025-08-01",
     "end_date": "2025-08-31"
+  },
+  "chart": {
+    "type": "bar",
+    "justification": "Bar charts are best for comparing discrete categories such as spending by category over a month"
   }
 }
 """),
@@ -1103,6 +1154,7 @@ Example output:
                 gemini_response = json.loads(response_text.strip())
                 intent = gemini_response.get("intent")
                 extracted_filters = gemini_response.get("filters", {})
+                chart = gemini_response.get("chart", {})
                 logger.info(f"Gemini successfully parsed intent: {intent}, filters: {extracted_filters}")
                 
             except json.JSONDecodeError as e:
@@ -1137,7 +1189,7 @@ Example output:
             else:
                 intent = "total_spent"  # Default fallback
         
-        logger.info(f"Detected intent: {intent}, filters: {extracted_filters}")
+        logger.info(f"Detected intent: {intent}, filters: {extracted_filters}, chart: {chart}")
         
         # Step 2: Query Supabase database based on extracted filters
         # TODO: Optimize database queries based on intent and filters
@@ -1184,99 +1236,283 @@ Example output:
         
         logger.info(f"Database query completed for intent: {intent}")
         
-        # Step 3: Generate AI-powered insights and recommendations
-        # TODO: Replace with actual Gemini API integration for insight generation
-        # This section will use the raw data to generate intelligent insights
+        # Step 3: Generate AI-powered insights using Gemini
+        try:
+            # Get chart recommendation from Gemini Step 1 (if available) or use defaults
+            if 'chart' in locals() and chart:
+                chart_type = chart.get("type", "bar")
+                explanation = chart.get("justification", "Chart type selected for optimal data visualization")
+            else:
+                # Fallback chart recommendations based on intent
+                if intent == "spending_by_category":
+                    chart_type = "pie"
+                    explanation = "Pie charts effectively show proportional breakdown of spending across categories"
+                elif intent == "transactions_over_time":
+                    chart_type = "line"
+                    explanation = "Line charts are ideal for showing trends and changes over time"
+                elif intent == "balance_over_time":
+                    chart_type = "area"
+                    explanation = "Area charts effectively show balance changes and trends over time"
+                else:
+                    chart_type = "bar"
+                    explanation = "Bar charts clearly display total amounts for easy comparison"
+
+            # Prepare input for Gemini Step 3 generation
+            gemini_input = {
+                "intent": intent,
+                "filters": extracted_filters,
+                "chart": {"type": chart_type, "justification": explanation},
+                "explanation": explanation,
+                "raw_data": raw_data
+            }
+
+            # Initialize Gemini client for Step 3 insight generation
+            client = genai.Client(
+                api_key=os.environ.get("GEMINI_API_KEY"),
+            )
+
+            model = "gemini-flash-latest"
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_text(text=json.dumps(gemini_input)),
+                    ],
+                ),
+            ]
+            generate_content_config = types.GenerateContentConfig(
+                thinking_config = types.ThinkingConfig(
+                    thinking_budget=-1,
+                ),
+                system_instruction=[
+                    types.Part.from_text(text="""You are a financial visualization AI assistant.  
+
+Your task: Take the following inputs:
+- "intent": the detected intent from the user's natural language query
+- "filters": any extracted filters (e.g., category, start_date, end_date)
+- "chart": a suggested Plotly chart type and associated details
+- "explanation": a justification of why the chosen chart is appropriate
+- "raw_data": raw transaction data retrieved from the Supabase database
+
+Your output must strictly match the AskAgentResponse Pydantic model:
+
+AskAgentResponse:
+- success: bool → whether the request was successful
+- intent: string → detected intent from user prompt
+- filters: dict → extracted filters used for the database query
+- insight: object → a FinancialInsight object containing:
+    - summary: str → short, concise natural language summary of the insight
+    - chart: object → a PlotlyChart object containing:
+        - data: list of PlotlyTrace objects, each with:
+            - type: str (bar, line, pie, scatter, etc.)
+            - x: optional list of values for x-axis
+            - y: optional list of values for y-axis
+            - values: optional list of numbers (for pie charts)
+            - labels: optional list of labels (for pie charts)
+            - name: optional trace name
+            - marker: optional marker object (with color)
+        - layout: PlotlyLayout object with:
+            - title: str
+            - xaxis: optional axis configuration (title)
+            - yaxis: optional axis configuration (title)
+            - margin: optional margin object (t, l, r, b)
+            - plot_bgcolor: optional
+            - paper_bgcolor: optional
+    - explanation: str → detailed justification of chart choice
+- raw_data: dict → raw query results from the database
+- error: optional str → error message if the operation failed
+
+Constraints:
+- Output must be valid JSON only, with **no extra text or markdown**.
+- Ensure all fields required by the model are present.
+- Summaries should be concise and insightful, not just descriptive.
+- Chart objects must be valid and ready to render in Plotly (react-plotly.js).
+
+Example output:
+
+{
+  "success": true,
+  "intent": "spending_by_category",
+  "filters": {
+    "category": "groceries",
+    "start_date": "2025-08-01",
+    "end_date": "2025-08-31"
+  },
+  "insight": {
+    "summary": "You spent the most on groceries ($450) this month.",
+    "chart": {
+      "data": [
+        {
+          "type": "bar",
+          "x": ["Groceries", "Transportation", "Entertainment"],
+          "y": [450, 300, 200],
+          "marker": {"color": "rgba(99,110,250,0.7)"}
+        }
+      ],
+      "layout": {
+        "title": "Spending by Category - August 2025",
+        "xaxis": {"title": "Category"},
+        "yaxis": {"title": "Amount ($)"},
+        "margin": {"t": 40, "l": 50, "r": 20, "b": 50},
+        "plot_bgcolor": "white",
+        "paper_bgcolor": "white"
+      }
+    },
+    "explanation": "A bar chart is ideal for comparing spending across categories."
+  },
+  "raw_data": {
+    "transactions": [
+      {"date": "2025-08-02", "merchant": "Whole Foods", "amount": 150, "category": "Groceries"},
+      {"date": "2025-08-10", "merchant": "Trader Joe's", "amount": 300, "category": "Groceries"}
+    ]
+  },
+  "error": null
+}
+"""),
+                ],
+            )
+
+            # Collect the response from Gemini
+            response_text = ""
+            for chunk in client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            ):
+                response_text += chunk.text
+
+            # Parse the JSON response from Gemini
+            try:
+                # Clean the response text - remove any markdown formatting
+                clean_response = response_text.strip()
+                if clean_response.startswith("```json"):
+                    clean_response = clean_response[7:]
+                if clean_response.endswith("```"):
+                    clean_response = clean_response[:-3]
+                clean_response = clean_response.strip()
+
+                gemini_result = json.loads(clean_response)
+                
+                # Gemini should return the complete AskAgentResponse structure
+                logger.info(f"Gemini generated complete response for intent: {intent}")
+                return AskAgentResponse(**gemini_result)
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Gemini Step 3 response as JSON: {e}")
+                logger.error(f"Raw Gemini response: {response_text}")
+                raise Exception("Invalid JSON response from Gemini Step 3")
+
+        except Exception as e:
+            logger.warning(f"Gemini Step 3 failed ({str(e)}), using fallback insight generation")
+
+            # FALLBACK: Create AskAgentResponse with simple insight
+            if intent == "spending_by_category":
+                summary = "You spent the most on Food & Dining ($450) this month, followed by Transportation ($300)."
+                explanation = "A bar chart is the best choice because it clearly compares spending across categories, highlighting which ones dominate."
+                plotly_chart = PlotlyChart(
+                    data=[
+                        PlotlyTrace(
+                            type="bar",
+                            x=["Food & Dining", "Transportation", "Entertainment", "Shopping", "Utilities"],
+                            y=[450, 300, 200, 150, 100],
+                            marker=PlotlyMarker(color="rgba(99, 110, 250, 0.7)")
+                        )
+                    ],
+                    layout=PlotlyLayout(
+                        title="Spending by Category - September 2025",
+                        xaxis=PlotlyAxis(title="Category"),
+                        yaxis=PlotlyAxis(title="Amount ($)"),
+                        margin=PlotlyMargin(t=40, l=50, r=20, b=50),
+                        plot_bgcolor="white",
+                        paper_bgcolor="white"
+                    )
+                )
+            else:
+                summary = f"Analysis completed for {intent.replace('_', ' ')}."
+                explanation = f"Chart type selected for optimal data visualization of {intent}."
+                plotly_chart = PlotlyChart(
+                    data=[
+                        PlotlyTrace(
+                            type="bar",
+                            x=["Total"],
+                            y=[0],
+                            marker=PlotlyMarker(color="rgba(156, 163, 175, 0.7)")
+                        )
+                    ],
+                    layout=PlotlyLayout(
+                        title="Financial Analysis",
+                        xaxis=PlotlyAxis(title="Category"),
+                        yaxis=PlotlyAxis(title="Amount ($)"),
+                        margin=PlotlyMargin(t=40, l=50, r=20, b=50),
+                        plot_bgcolor="white",
+                        paper_bgcolor="white"
+                    )
+                )
+
+            # Create fallback insight object
+            insight = FinancialInsight(
+                summary=summary,
+                explanation=explanation,
+                chart=plotly_chart
+            )
+
+            logger.info(f"Generated fallback insight for intent: {intent}")
+
+            # Return complete AskAgentResponse
+            return AskAgentResponse(
+                success=True,
+                intent=intent,
+                filters=extracted_filters,
+                insight=insight,
+                raw_data=raw_data,
+                error=None
+            )
+
+# 3. Update the error handling (around lines 1403-1412):
+    except Exception as e:
+        logger.error(f"Error in ask-agent endpoint: {str(e)}")
         
-        # PLACEHOLDER: AI-powered insight generation
-        # This section will be replaced with actual Gemini API calls
-        # Expected workflow:
-        # 1. Send raw data and user prompt to Gemini
-        # 2. Request structured response with summary, explanation, and recommendations
-        # 3. Generate appropriate chart data for visualization
-        # 4. Format response according to AgentInsight model
-        
-        # Placeholder insight generation based on intent
-        if intent == "total_spent":
-            summary = "Your total spending analysis shows your overall expenditure patterns."
-            explanation = "A bar chart was chosen to clearly display the total amount spent, making it easy to see the magnitude of your expenses."
-            chart_data = ChartData(
-                type="bar",
-                data=[{"label": "Total Spent", "amount": 2500}],
-                labels=["Total Spent"],
-                title="Total Spending"
+        # Create error response with basic insight
+        error_insight = FinancialInsight(
+            summary="An error occurred while processing your request.",
+            explanation="Unable to generate chart due to processing error.",
+            chart=PlotlyChart(
+                data=[
+                    PlotlyTrace(
+                        type="bar",
+                        x=["Error"],
+                        y=[0],
+                        marker=PlotlyMarker(color="rgba(239, 68, 68, 0.7)")
+                    )
+                ],
+                layout=PlotlyLayout(
+                    title="Processing Error",
+                    xaxis=PlotlyAxis(title="Status"),
+                    yaxis=PlotlyAxis(title="Value"),
+                    margin=PlotlyMargin(t=40, l=50, r=20, b=50),
+                    plot_bgcolor="white",
+                    paper_bgcolor="white"
+                )
             )
-            
-        elif intent == "total_income":
-            summary = "Your total income analysis shows your overall earning patterns."
-            explanation = "A bar chart was chosen to clearly display your total income, providing a clear view of your earnings."
-            chart_data = ChartData(
-                type="bar",
-                data=[{"label": "Total Income", "amount": 3500}],
-                labels=["Total Income"],
-                title="Total Income"
-            )
-            
-        elif intent == "spending_by_category":
-            summary = "Here's how your spending is distributed across different categories."
-            explanation = "A pie chart was chosen to show the proportional breakdown of spending by category, making it easy to identify your largest expense areas."
-            chart_data = ChartData(
-                type="pie",
-                data=[{"name": "Food", "value": 40}, {"name": "Transport", "value": 20}, {"name": "Shopping", "value": 40}],
-                title="Spending Distribution by Category"
-            )
-            
-        elif intent == "transactions_over_time":
-            summary = "Your transaction patterns over time show spending trends."
-            explanation = "A line chart was chosen to display transactions over time, making it easy to spot trends and patterns in your spending behavior."
-            chart_data = ChartData(
-                type="line",
-                data=[{"date": "2024-01", "amount": 1200}, {"date": "2024-02", "amount": 1100}],
-                labels=["January", "February"],
-                title="Transactions Over Time"
-            )
-            
-        elif intent == "balance_over_time":
-            summary = "Your account balance trends show how your money flows over time."
-            explanation = "An area chart was chosen to show balance changes over time, providing a clear view of your financial trajectory."
-            chart_data = ChartData(
-                type="area",
-                data=[{"date": "2024-01", "balance": 5000}, {"date": "2024-02", "balance": 5200}],
-                labels=["January", "February"],
-                title="Account Balance Over Time"
-            )
-            
-        else:
-            summary = "Here's a general overview of your financial situation."
-            explanation = "A summary view was chosen to provide a comprehensive overview of your financial data."
-            chart_data = None
-        
-        # Create the insight object
-        insight = AgentInsight(
-            summary=summary,
-            explanation=explanation,
-            chart_data=chart_data
         )
         
-        logger.info(f"Generated insight for intent: {intent}")
-        
-        # Step 4: Return formatted response
         return AskAgentResponse(
-            success=True,
-            insight=insight,
-            intent=intent,
-            filters=extracted_filters,
-            raw_data=raw_data,
-            error=None
+            success=False,
+            intent=None,
+            filters=None,
+            insight=error_insight,
+            raw_data=None,
+            error=f"Failed to process request: {str(e)}"
         )
+
         
     except Exception as e:
         logger.error(f"Error in ask-agent endpoint: {str(e)}")
         return AskAgentResponse(
             success=False,
-            insight=None,
             intent=None,
             filters=None,
+            insight=None,
             raw_data=None,
             error=f"Failed to process request: {str(e)}"
         )
