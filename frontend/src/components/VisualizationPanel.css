@@ -107,32 +107,99 @@
   font-style: italic;
 }
 
-.insight-item {
-  margin-bottom: 16px;
-  padding: 16px;
-  background: #f9fafb;
-  border-radius: 8px;
-  border-left: 4px solid #3b82f6;
+/* Current insight display */
+.current-insight {
+  margin-bottom: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px;
+  border: 2px solid #3b82f6;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
-.insight-question {
-  margin-bottom: 8px;
+.insight-summary h4 {
   color: #1f2937;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
 }
 
-.insight-response {
-  margin-bottom: 8px;
-  color: #4b5563;
+.summary-text {
+  color: #374151;
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 12px;
   line-height: 1.5;
 }
 
-.insight-response p {
-  margin-bottom: 4px;
+.explanation-text {
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Insights history */
+.insights-history {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 16px;
+}
+
+.insights-history h4 {
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.insight-item {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border-left: 3px solid #d1d5db;
+  transition: all 0.2s ease;
+}
+
+.insight-item:hover {
+  background: #f3f4f6;
+  border-left-color: #3b82f6;
+}
+
+.insight-question {
+  margin-bottom: 6px;
+  color: #1f2937;
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.insight-response {
+  margin-bottom: 6px;
+  color: #4b5563;
+  line-height: 1.4;
+}
+
+.insight-summary-text {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+}
+
+.insight-intent {
+  display: inline-block;
+  background: #e0e7ff;
+  color: #3730a3;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .insight-timestamp {
-  font-size: 12px;
+  font-size: 11px;
   color: #9ca3af;
   text-align: right;
 }

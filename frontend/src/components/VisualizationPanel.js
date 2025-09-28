@@ -2,7 +2,7 @@ import React from 'react';
 import Plot from 'react-plotly.js';
 import './VisualizationPanel.css';
 
-const VisualizationPanel = ({ chartData, insights, isLoading, error }) => {
+const VisualizationPanel = ({ chartData, insights, currentInsight, isLoading, error }) => {
   // Default placeholder chart data
   const defaultChartData = {
     data: [
@@ -77,21 +77,41 @@ const VisualizationPanel = ({ chartData, insights, isLoading, error }) => {
               </p>
             </div>
           ) : (
-            insights.map((insight) => (
-              <div key={insight.id} className="insight-item">
-                <div className="insight-question">
-                  <strong>Q:</strong> {insight.question}
+            <>
+              {/* Current insight display */}
+              {currentInsight && (
+                <div className="current-insight">
+                  <div className="insight-summary">
+                    <h4>Current Analysis</h4>
+                    <p className="summary-text">{currentInsight.summary}</p>
+                  </div>
+                  <div className="insight-explanation">
+                    <p className="explanation-text">{currentInsight.explanation}</p>
+                  </div>
                 </div>
-                <div className="insight-response">
-                  {insight.insights.map((text, index) => (
-                    <p key={index}>{text}</p>
-                  ))}
-                </div>
-                <div className="insight-timestamp">
-                  {new Date(insight.timestamp).toLocaleTimeString()}
-                </div>
+              )}
+              
+              {/* Insights history */}
+              <div className="insights-history">
+                <h4>Recent Queries</h4>
+                {insights.map((insight) => (
+                  <div key={insight.id} className="insight-item">
+                    <div className="insight-question">
+                      <strong>Q:</strong> {insight.question}
+                    </div>
+                    <div className="insight-response">
+                      <p className="insight-summary-text">{insight.summary}</p>
+                      {insight.intent && (
+                        <span className="insight-intent">{insight.intent}</span>
+                      )}
+                    </div>
+                    <div className="insight-timestamp">
+                      {new Date(insight.timestamp).toLocaleTimeString()}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))
+            </>
           )}
         </div>
       </div>

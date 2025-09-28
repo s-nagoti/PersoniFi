@@ -54,12 +54,7 @@ api.interceptors.response.use(
 export const askAgent = async (prompt) => {
   try {
     const response = await api.post('/api/ask-agent', {
-      query: prompt,
-      // Add additional context if needed
-      context: {
-        timestamp: new Date().toISOString(),
-        session_id: generateSessionId()
-      }
+      prompt: prompt
     });
 
     return response.data;
@@ -76,16 +71,16 @@ export const askAgent = async (prompt) => {
 };
 
 /**
- * Upload and parse transaction files (CSV/Excel)
+ * Upload and parse transaction files (CSV/Excel) and save to database
  * @param {File} file - File to upload
- * @returns {Promise<Object>} Parsed transaction data
+ * @returns {Promise<Object>} Parsed and saved transaction data
  */
-export const parseTransactions = async (file) => {
+export const uploadAndSaveTransactions = async (file) => {
   try {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await api.post('/api/parse-transactions', formData, {
+    const response = await api.post('/api/upload-and-save', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -93,11 +88,11 @@ export const parseTransactions = async (file) => {
 
     return response.data;
   } catch (error) {
-    console.error('Error parsing transactions:', error);
+    console.error('Error uploading and saving transactions:', error);
     
     // Return mock data for development/testing
     if (process.env.NODE_ENV === 'development') {
-      return getMockParseResponse(file);
+      return getMockUploadResponse(file);
     }
     
     throw error;
@@ -138,51 +133,82 @@ const generateSessionId = () => {
 const getMockAgentResponse = (prompt) => {
   const mockResponses = {
     'spending': {
-      insights: [
-        "Your top spending category is Food & Dining at $1,247 this month.",
-        "You've spent 23% more on transportation compared to last month.",
-        "Consider setting a budget for entertainment expenses."
-      ],
-      chart_data: {
-        data: [
-          {
-            x: ['Food & Dining', 'Transportation', 'Shopping', 'Entertainment', 'Bills'],
-            y: [1247, 543, 432, 298, 1876],
-            type: 'bar',
-            marker: { color: ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444'] },
-            name: 'Spending by Category'
+      success: true,
+      intent: "spending_by_category",
+      filters: { category: ["Food & Dining", "Transportation", "Shopping"] },
+      insight: {
+        summary: "Your top spending category is Food & Dining at $1,247 this month.",
+        explanation: "Based on your transaction history, here's a breakdown of your spending by category. Food & Dining represents the largest portion of your expenses.",
+        chart: {
+          data: [
+            {
+              x: ['Food & Dining', 'Transportation', 'Shopping', 'Entertainment', 'Bills'],
+              y: [1247, 543, 432, 298, 1876],
+              type: 'bar',
+              marker: { color: '#4F46E5' },
+              name: 'Spending by Category'
+            }
+          ],
+          layout: {
+            title: {
+              text: '<b>Monthly Spending by Category</b>',
+              x: 0.5,
+              xanchor: 'center',
+              font: { size: 18, color: '#374151', family: 'Arial, sans-serif' }
+            },
+            xaxis: { 
+              title: { text: 'Category', font: { size: 14, color: '#6b7280' } },
+              tickfont: { color: '#6b7280' }
+            },
+            yaxis: { 
+              title: { text: 'Amount ($)', font: { size: 14, color: '#6b7280' } },
+              tickfont: { color: '#6b7280' }
+            },
+            margin: { t: 60, r: 50, b: 60, l: 80 },
+            plot_bgcolor: '#ffffff',
+            paper_bgcolor: '#ffffff'
           }
-        ],
-        layout: {
-          title: 'Monthly Spending by Category',
-          xaxis: { title: 'Category' },
-          yaxis: { title: 'Amount ($)' },
-          margin: { t: 60, r: 50, b: 60, l: 80 }
         }
       }
     },
     'trends': {
-      insights: [
-        "Your spending has increased by 12% over the last 3 months.",
-        "There's a notable spike in dining expenses during weekends.",
-        "Your savings rate is currently at 18% of income."
-      ],
-      chart_data: {
-        data: [
-          {
-            x: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-            y: [2340, 2156, 2543, 2789, 2456, 2678],
-            type: 'scatter',
-            mode: 'lines+markers',
-            marker: { color: '#3b82f6' },
-            name: 'Monthly Spending'
+      success: true,
+      intent: "spending_trends",
+      filters: { start_date: "2024-01-01", end_date: "2024-06-30" },
+      insight: {
+        summary: "Your spending has increased by 12% over the last 6 months.",
+        explanation: "This chart shows your monthly spending trends. There's been a gradual increase in overall spending with some seasonal variations.",
+        chart: {
+          data: [
+            {
+              x: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+              y: [2340, 2156, 2543, 2789, 2456, 2678],
+              type: 'scatter',
+              mode: 'lines+markers',
+              marker: { color: '#4F46E5', size: 8 },
+              line: { color: '#4F46E5', width: 3 },
+              name: 'Monthly Spending'
+            }
+          ],
+          layout: {
+            title: {
+              text: '<b>Spending Trends Over Time</b>',
+              x: 0.5,
+              xanchor: 'center',
+              font: { size: 18, color: '#374151', family: 'Arial, sans-serif' }
+            },
+            xaxis: { 
+              title: { text: 'Month', font: { size: 14, color: '#6b7280' } },
+              tickfont: { color: '#6b7280' }
+            },
+            yaxis: { 
+              title: { text: 'Total Spending ($)', font: { size: 14, color: '#6b7280' } },
+              tickfont: { color: '#6b7280' }
+            },
+            margin: { t: 60, r: 50, b: 60, l: 80 },
+            plot_bgcolor: '#ffffff',
+            paper_bgcolor: '#ffffff'
           }
-        ],
-        layout: {
-          title: 'Spending Trends Over Time',
-          xaxis: { title: 'Month' },
-          yaxis: { title: 'Total Spending ($)' },
-          margin: { t: 60, r: 50, b: 60, l: 80 }
         }
       }
     }
@@ -198,50 +224,86 @@ const getMockAgentResponse = (prompt) => {
 
   // Default response
   return {
-    insights: [
-      "I've analyzed your financial data based on your question.",
-      "Here are some key insights from your transaction history.",
-      "Feel free to ask more specific questions about your finances!"
-    ],
-    chart_data: null
+    success: true,
+    intent: "general_inquiry",
+    insight: {
+      summary: "I've analyzed your financial data based on your question.",
+      explanation: "Here are some key insights from your transaction history. Feel free to ask more specific questions about your finances!",
+      chart: {
+        data: [
+          {
+            x: ['Income', 'Expenses', 'Savings'],
+            y: [5000, 3500, 1500],
+            type: 'bar',
+            marker: { color: '#4F46E5' },
+            name: 'Financial Overview'
+          }
+        ],
+        layout: {
+          title: {
+            text: '<b>Financial Overview</b>',
+            x: 0.5,
+            xanchor: 'center',
+            font: { size: 18, color: '#374151', family: 'Arial, sans-serif' }
+          },
+          xaxis: { title: { text: 'Category', font: { size: 14, color: '#6b7280' } } },
+          yaxis: { title: { text: 'Amount ($)', font: { size: 14, color: '#6b7280' } } },
+          margin: { t: 60, r: 50, b: 60, l: 80 },
+          plot_bgcolor: '#ffffff',
+          paper_bgcolor: '#ffffff'
+        }
+      }
+    }
   };
 };
 
 /**
- * Mock response for parse-transactions endpoint (development only)
+ * Mock response for upload-and-save endpoint (development only)
  * @param {File} file - Uploaded file
- * @returns {Object} Mock parse response
+ * @returns {Object} Mock upload response
  */
-const getMockParseResponse = (file) => {
+const getMockUploadResponse = (file) => {
   return {
     success: true,
-    message: `Successfully parsed ${file.name}`,
-    transaction_count: Math.floor(Math.random() * 100) + 50,
-    file_info: {
-      name: file.name,
-      size: file.size,
-      type: file.type
-    },
-    sample_transactions: [
+    data: [
       {
-        date: '2024-01-15',
-        description: 'GROCERY STORE PURCHASE',
+        date: "2024-01-15",
+        merchant: "GROCERY STORE PURCHASE",
         amount: -87.43,
-        category: 'Food & Dining'
+        category: "Food & Dining"
       },
       {
-        date: '2024-01-14',
-        description: 'SALARY DEPOSIT',
+        date: "2024-01-14", 
+        merchant: "SALARY DEPOSIT",
         amount: 3500.00,
-        category: 'Income'
+        category: "Income"
       },
       {
-        date: '2024-01-13',
-        description: 'GAS STATION',
+        date: "2024-01-13",
+        merchant: "GAS STATION",
         amount: -45.67,
-        category: 'Transportation'
+        category: "Transportation"
       }
-    ]
+    ],
+    metadata: {
+      total_transactions: Math.floor(Math.random() * 100) + 50,
+      file_type: file.name.endsWith('.csv') ? 'csv' : 'excel',
+      column_mapping: {
+        date: "Transaction Date",
+        amount: "Amount", 
+        merchant: "Description",
+        category: "Category"
+      },
+      original_filename: file.name,
+      file_size: file.size,
+      upload_timestamp: new Date().toISOString(),
+      processing_time: new Date().toISOString()
+    },
+    save_result: {
+      success: true,
+      transactions_inserted: Math.floor(Math.random() * 100) + 50,
+      message: "Transactions successfully saved to database"
+    }
   };
 };
 

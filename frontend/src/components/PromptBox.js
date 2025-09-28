@@ -42,15 +42,36 @@ const PromptBox = ({ onPromptSubmit, onFileUpload, isLoading }) => {
     return validTypes.includes(file.type) || file.name.match(/\.(csv|xls|xlsx)$/i);
   };
 
+  const handleFileDrop = (e) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      if (isValidFileType(file)) {
+        onFileUpload(file);
+      } else {
+        alert('Please upload a valid CSV or Excel file');
+      }
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
   return (
     <div className="prompt-box">
       <form onSubmit={handleSubmit} className="prompt-form">
-        <div className="input-container">
+        <div 
+          className="input-container"
+          onDrop={handleFileDrop}
+          onDragOver={handleDragOver}
+        >
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about your finances or upload a statement file..."
+            placeholder="Ask about your finances or drag & drop a CSV/Excel file..."
             className="prompt-input"
             rows={1}
             disabled={isLoading}
@@ -102,9 +123,10 @@ const PromptBox = ({ onPromptSubmit, onFileUpload, isLoading }) => {
       
       <div className="prompt-footer">
         <p className="upload-info">
-          Supported formats: CSV, Excel (.xlsx, .xls) • 
+          📁 Drag & drop files or click Upload • Supported: CSV, Excel (.xlsx, .xls) • Max 10MB
+          <br />
           <span className="examples">
-            Try: "What are my top spending categories?" or "Show monthly trends"
+            💡 Try: "What are my top spending categories?" • "Show monthly trends" • "Analyze my expenses"
           </span>
         </p>
       </div>
