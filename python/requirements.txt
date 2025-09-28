@@ -24,3 +24,6 @@ pydantic>=2.0.0
 
 # AI Integration
 google-genai>=0.7.0
+
+# Visualization (for testing)
+plotly>=5.17.0
