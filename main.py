@@ -18,6 +18,7 @@ API Endpoints:
 - POST /api/parse-transactions: Parse uploaded files and return structured data
 - POST /api/save-transactions: Save structured transaction data to database
 - POST /api/upload-and-save: Combined endpoint for file upload, parsing, and saving
+- POST /api/ask-agent: AI-powered financial insights and analysis
 
 Dependencies:
 - fastapi: Modern web framework
@@ -46,6 +47,9 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 import uvicorn
 import logging
+import json
+from google import genai
+from google.genai import types
 
 # Import our existing parser
 from python.transaction_parser import parse_transactions
@@ -153,6 +157,34 @@ class UploadAndSaveResponse(BaseModel):
     success: bool = Field(..., description="Whether the operation was successful")
     inserted: int = Field(..., description="Number of transactions successfully saved")
     errors: List[str] = Field(default=[], description="List of any failed insertions or errors")
+
+# AI Agent Models for /api/ask-agent endpoint
+class AskAgentRequest(BaseModel):
+    """Request model for AI agent financial insights"""
+    prompt: str = Field(..., description="User's natural language question about their finances", min_length=1, max_length=1000)
+
+class ChartData(BaseModel):
+    """Model for chart-ready visualization data"""
+    type: str = Field(..., description="Chart type (e.g., 'line', 'bar', 'pie', 'area')")
+    data: List[Dict[str, Any]] = Field(..., description="Chart data points")
+    labels: Optional[List[str]] = Field(None, description="Chart labels")
+    title: Optional[str] = Field(None, description="Chart title")
+
+class AgentInsight(BaseModel):
+    """Model for AI-generated financial insight"""
+    summary: str = Field(..., description="Brief summary of the financial insight")
+    explanation: str = Field(..., description="Detailed explanation of why given chart was chosen")
+    chart_data: Optional[ChartData] = Field(None, description="Chart-ready data for visualization")
+    #recommendations: Optional[List[str]] = Field(None, description="Actionable recommendations")
+
+class AskAgentResponse(BaseModel):
+    """Response model for AI agent financial insights"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    insight: Optional[AgentInsight] = Field(None, description="AI-generated financial insight")
+    intent: Optional[str] = Field(None, description="Detected intent from user prompt")
+    filters: Optional[Dict[str, Any]] = Field(None, description="Extracted filters for database query")
+    raw_data: Optional[Dict[str, Any]] = Field(None, description="Raw database query results")
+    error: Optional[str] = Field(None, description="Error message if operation failed")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -951,6 +983,302 @@ async def upload_and_save_endpoint(
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
+        )
+
+@app.post("/api/ask-agent", response_model=AskAgentResponse)
+@limiter.limit("30/minute")
+async def ask_agent_endpoint(
+    request: Request,
+    agent_request: AskAgentRequest
+):
+    """
+    AI-powered financial insights and analysis endpoint.
+    
+    This endpoint processes natural language questions about finances and returns
+    intelligent insights, visualizations, and recommendations based on the user's
+    transaction data stored in the database.
+    
+    **Request Body:**
+    - `prompt`: String - Natural language question about finances (1-1000 characters)
+    
+    **Response:**
+    - `success`: Boolean - Whether the operation was successful
+    - `insight`: AgentInsight object containing:
+        - `summary`: Brief summary of the financial insight
+        - `explanation`: Detailed explanation of the insight
+        - `chart_data`: Optional chart-ready data for visualization
+        - `recommendations`: Optional actionable recommendations
+    - `intent`: String - Detected intent from user prompt
+    - `filters`: Dict - Extracted filters for database query
+    - `raw_data`: Dict - Raw database query results
+    - `error`: String - Error message if operation failed
+    
+    **Supported Question Types:**
+    - Spending analysis ("How much did I spend last month?")
+    - Category breakdown ("What are my biggest expense categories?")
+    - Trend analysis ("Show me my spending trends over time")
+    - Budget insights ("Am I over budget in dining?")
+    - Financial recommendations ("How can I save more money?")
+    
+    **Note:**
+    - AI integration code will be added later (Gemini API)
+    - Database queries will be optimized based on detected intent
+    - Chart data will be formatted for frontend visualization libraries
+    """
+    
+    logger.info(f"Received AI agent request: {agent_request.prompt[:100]}...")
+    
+    try:
+        # Step 1: Parse user prompt to extract intent and filters using AI (Gemini)
+        intent = None
+        extracted_filters = {}
+        
+        try:
+            # Gemini AI integration for intent detection and filter extraction
+            client = genai.Client(
+                api_key=os.environ.get("GEMINI_API_KEY"),
+            )
+
+            model = "gemini-flash-latest"
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_text(text=agent_request.prompt),
+                    ],
+                ),
+            ]
+            generate_content_config = types.GenerateContentConfig(
+                thinking_config = types.ThinkingConfig(
+                    thinking_budget=-1,
+                ),
+                system_instruction=[
+                    types.Part.from_text(text="""You are a financial query parser for a personal finance visualization agent. 
+Your task is to extract the user's intent and any specified filters from their natural language question about their personal finances. 
+
+The extracted intent should match one of the following actions that the /api/ask-agent endpoint can handle:
+- "total_spent" → compute total spending
+- "total_income" → compute total income
+- "spending_by_category" → breakdown of spend by category
+- "transactions_over_time" → list transactions over a specified period
+- "balance_over_time" → account balance trend over time
+
+Filters may include:
+- "category" (e.g., "groceries", "gasoline")
+- "start_date" (YYYY-MM-DD)
+- "end_date" (YYYY-MM-DD)
+- "metric" (optional, e.g., sum, average)
+
+Return the response strictly as a JSON object with the keys:
+- "intent" → the identified intent
+- "filters" → the extracted filters as key-value pairs
+
+If a filter is not present in the question, omit that key.  
+Do not include any text outside the JSON object.  
+
+Example output:
+{
+  "intent": "spending_by_category",
+  "filters": {
+    "category": "groceries",
+    "start_date": "2025-08-01",
+    "end_date": "2025-08-31"
+  }
+}
+"""),
+                ],
+            )
+
+            # Collect the response from Gemini
+            response_text = ""
+            for chunk in client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            ):
+                response_text += chunk.text
+            
+            # Parse the JSON response from Gemini
+            try:
+                gemini_response = json.loads(response_text.strip())
+                intent = gemini_response.get("intent")
+                extracted_filters = gemini_response.get("filters", {})
+                logger.info(f"Gemini successfully parsed intent: {intent}, filters: {extracted_filters}")
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Gemini response as JSON: {e}")
+                logger.error(f"Raw Gemini response: {response_text}")
+                raise Exception("Invalid JSON response from Gemini")
+                
+        except Exception as e:
+            logger.warning(f"Gemini API failed ({str(e)}), falling back to simple keyword matching")
+            
+            # FALLBACK: Simple keyword-based intent detection
+            prompt_lower = agent_request.prompt.lower()
+            
+            if "spending" in prompt_lower or "spent" in prompt_lower:
+                if "category" in prompt_lower or "categories" in prompt_lower:
+                    intent = "spending_by_category"
+                else:
+                    intent = "total_spent"
+                # Extract potential date filters (simple fallback)
+                if "last month" in prompt_lower:
+                    extracted_filters["date_range"] = "last_month"
+                elif "this month" in prompt_lower:
+                    extracted_filters["date_range"] = "this_month"
+            elif "category" in prompt_lower or "categories" in prompt_lower:
+                intent = "spending_by_category"
+            elif "trend" in prompt_lower or "over time" in prompt_lower:
+                intent = "transactions_over_time"
+            elif "balance" in prompt_lower:
+                intent = "balance_over_time"
+            elif "income" in prompt_lower:
+                intent = "total_income"
+            else:
+                intent = "total_spent"  # Default fallback
+        
+        logger.info(f"Detected intent: {intent}, filters: {extracted_filters}")
+        
+        # Step 2: Query Supabase database based on extracted filters
+        # TODO: Optimize database queries based on intent and filters
+        # This section will use the extracted filters to build efficient queries
+        
+        raw_data = {}
+        
+        # PLACEHOLDER: Database querying based on intent
+        # This section will be expanded with actual query logic based on intent
+        # Expected workflow:
+        # 1. Build appropriate Supabase query based on intent
+        # 2. Apply extracted filters (date ranges, categories, amounts)
+        # 3. Execute query and retrieve relevant transaction data
+        # 4. Perform any necessary aggregations or calculations
+        
+        if intent == "total_spent":
+            # Query for total spending data
+            # Placeholder: Will query transactions and sum amounts
+            raw_data = {"total_spent": 0.0, "transaction_count": 0}
+            
+        elif intent == "total_income":
+            # Query for total income data
+            # Placeholder: Will query positive transactions and sum amounts
+            raw_data = {"total_income": 0.0, "income_transactions": []}
+            
+        elif intent == "spending_by_category":
+            # Query for category-based spending data
+            # Placeholder: Will query and group by categories
+            raw_data = {"categories": {}, "total_by_category": {}}
+            
+        elif intent == "transactions_over_time":
+            # Query for time-series transaction data
+            # Placeholder: Will query transactions grouped by date
+            raw_data = {"daily_trends": [], "monthly_trends": []}
+            
+        elif intent == "balance_over_time":
+            # Query for balance trend data
+            # Placeholder: Will calculate running balance over time
+            raw_data = {"balance_trends": [], "starting_balance": 0.0}
+            
+        else:
+            # Default: General financial overview
+            raw_data = {"summary": {}, "recent_transactions": []}
+        
+        logger.info(f"Database query completed for intent: {intent}")
+        
+        # Step 3: Generate AI-powered insights and recommendations
+        # TODO: Replace with actual Gemini API integration for insight generation
+        # This section will use the raw data to generate intelligent insights
+        
+        # PLACEHOLDER: AI-powered insight generation
+        # This section will be replaced with actual Gemini API calls
+        # Expected workflow:
+        # 1. Send raw data and user prompt to Gemini
+        # 2. Request structured response with summary, explanation, and recommendations
+        # 3. Generate appropriate chart data for visualization
+        # 4. Format response according to AgentInsight model
+        
+        # Placeholder insight generation based on intent
+        if intent == "total_spent":
+            summary = "Your total spending analysis shows your overall expenditure patterns."
+            explanation = "A bar chart was chosen to clearly display the total amount spent, making it easy to see the magnitude of your expenses."
+            chart_data = ChartData(
+                type="bar",
+                data=[{"label": "Total Spent", "amount": 2500}],
+                labels=["Total Spent"],
+                title="Total Spending"
+            )
+            
+        elif intent == "total_income":
+            summary = "Your total income analysis shows your overall earning patterns."
+            explanation = "A bar chart was chosen to clearly display your total income, providing a clear view of your earnings."
+            chart_data = ChartData(
+                type="bar",
+                data=[{"label": "Total Income", "amount": 3500}],
+                labels=["Total Income"],
+                title="Total Income"
+            )
+            
+        elif intent == "spending_by_category":
+            summary = "Here's how your spending is distributed across different categories."
+            explanation = "A pie chart was chosen to show the proportional breakdown of spending by category, making it easy to identify your largest expense areas."
+            chart_data = ChartData(
+                type="pie",
+                data=[{"name": "Food", "value": 40}, {"name": "Transport", "value": 20}, {"name": "Shopping", "value": 40}],
+                title="Spending Distribution by Category"
+            )
+            
+        elif intent == "transactions_over_time":
+            summary = "Your transaction patterns over time show spending trends."
+            explanation = "A line chart was chosen to display transactions over time, making it easy to spot trends and patterns in your spending behavior."
+            chart_data = ChartData(
+                type="line",
+                data=[{"date": "2024-01", "amount": 1200}, {"date": "2024-02", "amount": 1100}],
+                labels=["January", "February"],
+                title="Transactions Over Time"
+            )
+            
+        elif intent == "balance_over_time":
+            summary = "Your account balance trends show how your money flows over time."
+            explanation = "An area chart was chosen to show balance changes over time, providing a clear view of your financial trajectory."
+            chart_data = ChartData(
+                type="area",
+                data=[{"date": "2024-01", "balance": 5000}, {"date": "2024-02", "balance": 5200}],
+                labels=["January", "February"],
+                title="Account Balance Over Time"
+            )
+            
+        else:
+            summary = "Here's a general overview of your financial situation."
+            explanation = "A summary view was chosen to provide a comprehensive overview of your financial data."
+            chart_data = None
+        
+        # Create the insight object
+        insight = AgentInsight(
+            summary=summary,
+            explanation=explanation,
+            chart_data=chart_data
+        )
+        
+        logger.info(f"Generated insight for intent: {intent}")
+        
+        # Step 4: Return formatted response
+        return AskAgentResponse(
+            success=True,
+            insight=insight,
+            intent=intent,
+            filters=extracted_filters,
+            raw_data=raw_data,
+            error=None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in ask-agent endpoint: {str(e)}")
+        return AskAgentResponse(
+            success=False,
+            insight=None,
+            intent=None,
+            filters=None,
+            raw_data=None,
+            error=f"Failed to process request: {str(e)}"
         )
 
 @app.post("/api/save-transactions", response_model=SaveTransactionsResponse)
