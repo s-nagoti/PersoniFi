@@ -40,6 +40,10 @@ from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel, Field, validator
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from models import (
+    AskAgentRequest, PlotlyChart, PlotlyTrace, PlotlyLayout, PlotlyAxis, 
+    PlotlyMargin, PlotlyMarker, FinancialInsight, AskAgentResponse
+)
 import os
 import tempfile
 import shutil
@@ -50,6 +54,7 @@ import logging
 import json
 from google import genai
 from google.genai import types
+from chart_integration import generate_chart_for_intent
 
 # Import our existing parser
 from python.transaction_parser import parse_transactions
@@ -158,64 +163,7 @@ class UploadAndSaveResponse(BaseModel):
     inserted: int = Field(..., description="Number of transactions successfully saved")
     errors: List[str] = Field(default=[], description="List of any failed insertions or errors")
 
-# AI Agent Models for /api/ask-agent endpoint
-class AskAgentRequest(BaseModel):
-    """Request model for AI agent financial insights"""
-    prompt: str = Field(..., description="User's natural language question about their finances", min_length=1, max_length=1000)
-
-class PlotlyMarker(BaseModel):
-    """Plotly marker configuration"""
-    color: Optional[str] = Field(None, description="Marker color")
-
-class PlotlyTrace(BaseModel):
-    """Plotly trace data structure"""
-    type: str = Field(..., description="Chart type (e.g., 'bar', 'line', 'pie', 'scatter')")
-    x: Optional[List[Any]] = Field(None, description="X-axis data")
-    y: Optional[List[Any]] = Field(None, description="Y-axis data")
-    values: Optional[List[float]] = Field(None, description="Values for pie charts")
-    labels: Optional[List[str]] = Field(None, description="Labels for pie charts")
-    name: Optional[str] = Field(None, description="Trace name")
-    marker: Optional[PlotlyMarker] = Field(None, description="Marker styling")
-
-class PlotlyAxis(BaseModel):
-    """Plotly axis configuration"""
-    title: Optional[str] = Field(None, description="Axis title")
-
-class PlotlyMargin(BaseModel):
-    """Plotly margin configuration"""
-    t: Optional[int] = Field(None, description="Top margin")
-    l: Optional[int] = Field(None, description="Left margin")
-    r: Optional[int] = Field(None, description="Right margin")
-    b: Optional[int] = Field(None, description="Bottom margin")
-
-class PlotlyLayout(BaseModel):
-    """Plotly layout configuration"""
-    title: Optional[str] = Field(None, description="Chart title")
-    xaxis: Optional[PlotlyAxis] = Field(None, description="X-axis configuration")
-    yaxis: Optional[PlotlyAxis] = Field(None, description="Y-axis configuration")
-    margin: Optional[PlotlyMargin] = Field(None, description="Chart margins")
-    plot_bgcolor: Optional[str] = Field(None, description="Plot background color")
-    paper_bgcolor: Optional[str] = Field(None, description="Paper background color")
-
-class PlotlyChart(BaseModel):
-    """Plotly-compatible chart structure"""
-    data: List[PlotlyTrace] = Field(..., description="Chart data traces")
-    layout: PlotlyLayout = Field(..., description="Chart layout configuration")
-
-class FinancialInsight(BaseModel):
-    """Model for financial insight with Plotly chart"""
-    summary: str = Field(..., description="Brief summary of the financial insight")
-    chart: PlotlyChart = Field(..., description="Plotly-compatible chart data")
-    explanation: str = Field(..., description="Detailed explanation of why given chart was chosen")
-
-class AskAgentResponse(BaseModel):
-    """Response model for AI agent financial insights"""
-    success: bool = Field(..., description="Whether the operation was successful")
-    intent: Optional[str] = Field(None, description="Detected intent from user prompt")
-    filters: Optional[Dict[str, Any]] = Field(None, description="Extracted filters for database query")
-    insight: Optional[FinancialInsight] = Field(None, description="AI-generated financial insight with Plotly chart")
-    raw_data: Optional[Dict[str, Any]] = Field(None, description="Raw database query results")
-    error: Optional[str] = Field(None, description="Error message if operation failed")
+# AI Agent Models are now imported from models.py to avoid circular imports
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -1341,25 +1289,44 @@ Example output:
   "insight": {
     "summary": "You spent the most on groceries ($450) this month.",
     "chart": {
-      "data": [
-        {
-          "type": "bar",
-          "x": ["Groceries", "Transportation", "Entertainment"],
-          "y": [450, 300, 200],
-          "marker": {"color": "rgba(99,110,250,0.7)"}
-        }
-      ],
-      "layout": {
-        "title": "Spending by Category - August 2025",
-        "xaxis": {"title": "Category"},
-        "yaxis": {"title": "Amount ($)"},
-        "margin": {"t": 40, "l": 50, "r": 20, "b": 50},
-        "plot_bgcolor": "white",
-        "paper_bgcolor": "white"
-      }
+  "data": [
+    {
+      "type": "bar",
+      "x": ["Groceries", "Transportation", "Entertainment"],
+      "y": [450, 300, 200],
+      "marker": {
+        "color": "#4F46E5",
+        "line": {"color": "#FFFFFF", "width": 1}
+      },
+      "hovertemplate": "<b>%{x}</b><br>Amount: $%{y:,.2f}<extra></extra>"
+    }
+  ],
+  "layout": {
+    "title": {
+      "text": "<b>Spending by Category - August 2025</b>",
+      "x": 0.5,
+      "xanchor": "center",
+      "font": {"size": 18, "color": "#374151", "family": "Arial, sans-serif"}
     },
-    "explanation": "A bar chart is ideal for comparing spending across categories."
-  },
+    "xaxis": {
+      "title": {"text": "<b>Category</b>", "font": {"size": 14, "color": "#374151"}},
+      "tickfont": {"size": 11, "color": "#374151"},
+      "gridcolor": "#E5E7EB",
+      "showgrid": true
+    },
+    "yaxis": {
+      "title": {"text": "<b>Amount ($)</b>", "font": {"size": 14, "color": "#374151"}},
+      "tickfont": {"size": 11, "color": "#374151"},
+      "tickformat": "$,.0f",
+      "gridcolor": "#E5E7EB",
+      "showgrid": true
+    },
+    "margin": {"t": 60, "l": 80, "r": 40, "b": 60},
+    "plot_bgcolor": "#FAFAFA",
+    "paper_bgcolor": "#FFFFFF",
+    "font": {"family": "Arial, sans-serif", "color": "#374151"}
+  }
+},
   "raw_data": {
     "transactions": [
       {"date": "2025-08-02", "merchant": "Whole Foods", "amount": 150, "category": "Groceries"},
