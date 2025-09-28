@@ -66,55 +66,7 @@ const VisualizationPanel = ({ chartData, insights, currentInsight, isLoading, er
         )}
       </div>
       
-      <div className="insights-container">
-        <h3>AI Insights</h3>
-        <div className="insights-list">
-          {insights.length === 0 ? (
-            <div className="empty-state">
-              <p>Upload a file or ask a question to get started!</p>
-              <p className="empty-state-subtitle">
-                Try asking: "What are my top spending categories?" or "Show me my monthly trends"
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Current insight display */}
-              {currentInsight && (
-                <div className="current-insight">
-                  <div className="insight-summary">
-                    <h4>Current Analysis</h4>
-                    <p className="summary-text">{currentInsight.summary}</p>
-                  </div>
-                  <div className="insight-explanation">
-                    <p className="explanation-text">{currentInsight.explanation}</p>
-                  </div>
-                </div>
-              )}
-              
-              {/* Insights history */}
-              <div className="insights-history">
-                <h4>Recent Queries</h4>
-                {insights.map((insight) => (
-                  <div key={insight.id} className="insight-item">
-                    <div className="insight-question">
-                      <strong>Q:</strong> {insight.question}
-                    </div>
-                    <div className="insight-response">
-                      <p className="insight-summary-text">{insight.summary}</p>
-                      {insight.intent && (
-                        <span className="insight-intent">{insight.intent}</span>
-                      )}
-                    </div>
-                    <div className="insight-timestamp">
-                      {new Date(insight.timestamp).toLocaleTimeString()}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+     
     </div>
   );
 };
