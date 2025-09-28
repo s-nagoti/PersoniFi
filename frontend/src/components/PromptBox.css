@@ -1,0 +1,204 @@
+/* PromptBox styles */
+.prompt-box {
+  background: white;
+  border-top: 1px solid #e5e7eb;
+  padding: 20px 24px;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.prompt-form {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.input-container {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  background: #f9fafb;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px 16px;
+  transition: all 0.2s ease;
+}
+
+.input-container:focus-within {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  background: white;
+}
+
+.prompt-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  resize: none;
+  outline: none;
+  font-size: 16px;
+  line-height: 1.5;
+  font-family: inherit;
+  color: #1f2937;
+  min-height: 24px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.prompt-input::placeholder {
+  color: #9ca3af;
+}
+
+.prompt-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.upload-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #6b7280;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.upload-button:hover:not(:disabled) {
+  background: #4b5563;
+  transform: translateY(-1px);
+}
+
+.upload-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.submit-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 40px;
+  height: 40px;
+}
+
+.submit-button:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.submit-button:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.prompt-footer {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.upload-info {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.examples {
+  color: #9ca3af;
+  font-style: italic;
+  margin-left: 8px;
+}
+
+/* Auto-resize textarea */
+.prompt-input {
+  field-sizing: content;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .prompt-box {
+    padding: 16px 20px;
+  }
+  
+  .input-container {
+    padding: 10px 12px;
+  }
+  
+  .prompt-input {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+  
+  .action-buttons {
+    gap: 6px;
+  }
+  
+  .upload-button {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  
+  .submit-button {
+    min-width: 36px;
+    height: 36px;
+  }
+}
+
+@media (max-width: 480px) {
+  .prompt-box {
+    padding: 12px 16px;
+  }
+  
+  .input-container {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  
+  .action-buttons {
+    justify-content: space-between;
+  }
+  
+  .upload-button {
+    flex: 1;
+    justify-content: center;
+  }
+  
+  .prompt-footer {
+    margin-top: 8px;
+  }
+  
+  .upload-info {
+    font-size: 12px;
+  }
+  
+  .examples {
+    display: block;
+    margin-left: 0;
+    margin-top: 4px;
+  }
+}
+
+/* Animation for auto-growing textarea */
+.prompt-input {
+  transition: height 0.1s ease-out;
+}
