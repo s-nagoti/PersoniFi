@@ -1363,48 +1363,44 @@ Example output:
                     thinking_budget=-1,
                 ),
                 system_instruction=[
-                    types.Part.from_text(text="""You are a financial visualization AI assistant.  
-
-Your task: Take the following inputs:
+                    types.Part.from_text(text="""Your task: Take the following inputs:
 - "intent": the detected intent from the user's natural language query
 - "filters": any extracted filters (e.g., category, start_date, end_date)
-- "chart": a suggested Plotly chart type and associated details
-- "explanation": a justification of why the chosen chart is appropriate
 - "raw_data": raw transaction data retrieved from the Supabase database
 
-Your output must strictly match the AskAgentResponse Pydantic model:
+You must return a valid JSON object that matches the AskAgentResponse model exactly.
 
 AskAgentResponse:
 - success: bool → whether the request was successful
 - intent: string → detected intent from user prompt
 - filters: dict → extracted filters used for the database query
-- insight: object → a FinancialInsight object containing:
-    - summary: str → short, concise natural language summary of the insight
-    - chart: object → a PlotlyChart object containing:
-        - data: list of PlotlyTrace objects, each with:
-            - type: str (bar, line, pie, scatter, etc.)
-            - x: optional list of values for x-axis
-            - y: optional list of values for y-axis
-            - values: optional list of numbers (for pie charts)
-            - labels: optional list of labels (for pie charts)
-            - name: optional trace name
-            - marker: optional marker object (with color)
-        - layout: PlotlyLayout object with:
+- insight: object containing:
+    - summary: str → concise natural language summary of the insight
+    - chart: object containing:
+        - data: list of traces for Plotly, where each trace must include:
+            - type: str → ("bar", "line", "pie", "scatter", etc.)
+            - x: list of values for x-axis (must not be null if required by chart type)
+            - y: list of values for y-axis (must not be null if required by chart type)
+            - values: list of numbers (for pie charts only, otherwise omit)
+            - labels: list of labels (for pie charts only, otherwise omit)
+            - name: str → trace name
+            - marker: object with color property
+        - layout: object containing:
             - title: str
-            - xaxis: optional axis configuration (title)
-            - yaxis: optional axis configuration (title)
-            - margin: optional margin object (t, l, r, b)
-            - plot_bgcolor: optional
-            - paper_bgcolor: optional
-    - explanation: str → detailed justification of chart choice
+            - xaxis: { "title": str } if chart uses an x-axis
+            - yaxis: { "title": str } if chart uses a y-axis
+            - margin: { "t": int, "l": int, "r": int, "b": int }
+            - plot_bgcolor: str
+            - paper_bgcolor: str
+    - explanation: str → brief justification of chart choice
 - raw_data: dict → raw query results from the database
 - error: optional str → error message if the operation failed
 
 Constraints:
-- Output must be valid JSON only, with **no extra text or markdown**.
-- Ensure all fields required by the model are present.
-- Summaries should be concise and insightful, not just descriptive.
-- Chart objects must be valid and ready to render in Plotly (react-plotly.js).
+- Output must be valid JSON only, with **no extra text, comments, or markdown**.
+- All required fields must be present even if data is empty.
+- Chart objects must always be complete and ready to render in react-plotly.js.
+- Summaries should highlight the key insight, not just repeat the numbers.
 
 Example output:
 
@@ -1424,6 +1420,7 @@ Example output:
           "type": "bar",
           "x": ["Groceries", "Transportation", "Entertainment"],
           "y": [450, 300, 200],
+          "name": "August Spending",
           "marker": {"color": "rgba(99,110,250,0.7)"}
         }
       ],

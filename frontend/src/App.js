@@ -22,11 +22,16 @@ function App() {
     try {
       const response = await askAgent(prompt);
       
-      if (response.success && response.insight) {
+      // log the full response for debugging
+      console.log('ask-agent response:', response);
+
+      if (response.success) {
         // Update chart data from the insight
-        if (response.insight.chart) {
-          setChartData(response.insight.chart);
+        const chart = response.insight?.chart || response.chart || null;
+        if (chart) {
+          setChartData(chart);
         }
+
         
         // Set current insight for display
         setCurrentInsight(response.insight);
