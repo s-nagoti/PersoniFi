@@ -12,8 +12,9 @@ A modern React frontend for PersoniFi financial analysis application.
 
 ## Components
 
-- `App` - Main application container
-- `VisualizationPanel` - Displays Plotly charts and AI insights
+- `App` - Main application container with state management
+- `SummaryPanel` - Displays AI analysis summary and explanations
+- `VisualizationPanel` - Renders Plotly charts and insights history
 - `PromptBox` - Input interface with upload and submit functionality
 
 ## Getting Started
@@ -42,7 +43,7 @@ cp .env.example .env
 
 4. Update the API URL in `.env` if needed:
 ```
-REACT_APP_API_URL=http://localhost:8000
+REACT_APP_API_URL=http://localhost:3000
 ```
 
 ### Development
@@ -66,8 +67,7 @@ npm run build
 The frontend communicates with the FastAPI backend through these endpoints:
 
 - `POST /api/ask-agent` - Send queries to AI agent
-- `POST /api/parse-transactions` - Upload and parse transaction files
-- `POST /api/save-transactions` - Save parsed transactions to database
+- `POST /api/upload-and-save` - Upload, parse, and save transaction files
 
 ## File Support
 

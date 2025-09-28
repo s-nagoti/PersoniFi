@@ -40,10 +40,6 @@ from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel, Field, validator
 from supabase import create_client, Client
 from dotenv import load_dotenv
-from models import (
-    AskAgentRequest, PlotlyChart, PlotlyTrace, PlotlyLayout, PlotlyAxis, 
-    PlotlyMargin, PlotlyMarker, FinancialInsight, AskAgentResponse
-)
 import os
 import tempfile
 import shutil
@@ -54,7 +50,7 @@ import logging
 import json
 from google import genai
 from google.genai import types
-from chart_integration import generate_chart_for_intent
+
 
 # Import our existing parser
 from python.transaction_parser import parse_transactions
@@ -163,7 +159,64 @@ class UploadAndSaveResponse(BaseModel):
     inserted: int = Field(..., description="Number of transactions successfully saved")
     errors: List[str] = Field(default=[], description="List of any failed insertions or errors")
 
-# AI Agent Models are now imported from models.py to avoid circular imports
+# AI Agent Models for /api/ask-agent endpoint
+class AskAgentRequest(BaseModel):
+    """Request model for AI agent financial insights"""
+    prompt: str = Field(..., description="User's natural language question about their finances", min_length=1, max_length=1000)
+
+class PlotlyMarker(BaseModel):
+    """Plotly marker configuration"""
+    color: Optional[str] = Field(None, description="Marker color")
+
+class PlotlyTrace(BaseModel):
+    """Plotly trace data structure"""
+    type: str = Field(..., description="Chart type (e.g., 'bar', 'line', 'pie', 'scatter')")
+    x: Optional[List[Any]] = Field(None, description="X-axis data")
+    y: Optional[List[Any]] = Field(None, description="Y-axis data")
+    values: Optional[List[float]] = Field(None, description="Values for pie charts")
+    labels: Optional[List[str]] = Field(None, description="Labels for pie charts")
+    name: Optional[str] = Field(None, description="Trace name")
+    marker: Optional[PlotlyMarker] = Field(None, description="Marker styling")
+
+class PlotlyAxis(BaseModel):
+    """Plotly axis configuration"""
+    title: Optional[str] = Field(None, description="Axis title")
+
+class PlotlyMargin(BaseModel):
+    """Plotly margin configuration"""
+    t: Optional[int] = Field(None, description="Top margin")
+    l: Optional[int] = Field(None, description="Left margin")
+    r: Optional[int] = Field(None, description="Right margin")
+    b: Optional[int] = Field(None, description="Bottom margin")
+
+class PlotlyLayout(BaseModel):
+    """Plotly layout configuration"""
+    title: Optional[str] = Field(None, description="Chart title")
+    xaxis: Optional[PlotlyAxis] = Field(None, description="X-axis configuration")
+    yaxis: Optional[PlotlyAxis] = Field(None, description="Y-axis configuration")
+    margin: Optional[PlotlyMargin] = Field(None, description="Chart margins")
+    plot_bgcolor: Optional[str] = Field(None, description="Plot background color")
+    paper_bgcolor: Optional[str] = Field(None, description="Paper background color")
+
+class PlotlyChart(BaseModel):
+    """Plotly-compatible chart structure"""
+    data: List[PlotlyTrace] = Field(..., description="Chart data traces")
+    layout: PlotlyLayout = Field(..., description="Chart layout configuration")
+
+class FinancialInsight(BaseModel):
+    """Model for financial insight with Plotly chart"""
+    summary: str = Field(..., description="Brief summary of the financial insight")
+    chart: PlotlyChart = Field(..., description="Plotly-compatible chart data")
+    explanation: str = Field(..., description="Detailed explanation of why given chart was chosen")
+
+class AskAgentResponse(BaseModel):
+    """Response model for AI agent financial insights"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    intent: Optional[str] = Field(None, description="Detected intent from user prompt")
+    filters: Optional[Dict[str, Any]] = Field(None, description="Extracted filters for database query")
+    insight: Optional[FinancialInsight] = Field(None, description="AI-generated financial insight with Plotly chart")
+    raw_data: Optional[Dict[str, Any]] = Field(None, description="Raw database query results")
+    error: Optional[str] = Field(None, description="Error message if operation failed")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -964,6 +1017,75 @@ async def upload_and_save_endpoint(
             detail=f"Internal server error: {str(e)}"
         )
 
+def get_raw_data(parsed_input: dict) -> dict:
+    """
+    Takes parsed AI output with intent, filters, and chart info,
+    queries Supabase transactions table, and returns raw_data.
+    """
+    intent = parsed_input.get("intent")
+    filters = parsed_input.get("filters", {})
+    logger.info(f"In get_raw_data function, intent = { intent }. filters = { filters }")
+
+    query = supabase.table("transactions").select("*")
+
+    # Apply filters
+    if "category" in filters:
+        query = query.eq("category", filters["category"])
+        logger.info(f"1: Category is a filter, and query = { query }")
+    if "start_date" in filters:
+        query = query.gte("date", filters["start_date"])
+        logger.info(f"2: start_date is a filter, and query = { query }")
+    if "end_date" in filters:
+        query = query.lte("date", filters["end_date"])
+        logger.info(f"3: end_date is a filter, and query = { query }")
+
+    response = query.execute()
+    logger.info(f"response = { response }")
+
+    transactions = response.data or []
+    logger.info(f"transactions = { transactions }")
+
+    # Build raw_data based on intent
+    raw_data = {}
+
+    if intent == "spending_by_category":
+        total = sum(float(t["amount"]) for t in transactions)
+        raw_data = {
+            "total_spent": total,
+            "transaction_count": len(transactions),
+            "transactions": transactions  # optional: return full list
+        }
+    elif intent == "total_spent":
+        total = sum(float(t["amount"]) for t in transactions if t["amount"] < 0)
+        raw_data = {
+            "total_spent": total,
+            "transaction_count": len(transactions)
+        }
+    elif intent == "total_income":
+        total = sum(float(t["amount"]) for t in transactions if t["amount"] > 0)
+        raw_data = {
+            "total_income": total,
+            "transaction_count": len(transactions)
+        }
+    elif intent == "transactions_over_time":
+        # group by day
+        by_date = {}
+        for t in transactions:
+            date = t["date"]
+            by_date[date] = by_date.get(date, 0) + float(t["amount"])
+        raw_data = {"transactions_by_date": by_date}
+    elif intent == "balance_over_time":
+        # cumulative sum over sorted dates
+        sorted_txns = sorted(transactions, key=lambda x: x["date"])
+        balance = 0
+        balances = []
+        for t in sorted_txns:
+            balance += float(t["amount"])
+            balances.append({"date": t["date"], "balance": balance})
+        raw_data = {"balance_over_time": balances}
+
+    return raw_data
+
 @app.post("/api/ask-agent", response_model=AskAgentResponse)
 @limiter.limit("30/minute")
 async def ask_agent_endpoint(
@@ -1075,9 +1197,9 @@ Example output:
 {
   "intent": "spending_by_category",
   "filters": {
-    "category": "groceries",
-    "start_date": "2025-08-01",
-    "end_date": "2025-08-31"
+    "category": "Groceries", (always capitalize first letter and be plural)
+    "start_date": "2025-08-01", (if no year is given, assume the year is 2025)
+    "end_date": "2025-08-31" (if no year is given, assume the year is 2025)
   },
   "chart": {
     "type": "bar",
@@ -1139,11 +1261,18 @@ Example output:
         
         logger.info(f"Detected intent: {intent}, filters: {extracted_filters}, chart: {chart}")
         
+        
         # Step 2: Query Supabase database based on extracted filters
         # TODO: Optimize database queries based on intent and filters
         # This section will use the extracted filters to build efficient queries
-        
-        raw_data = {}
+        parsed_input = {
+        "intent": intent,
+        "filters": extracted_filters,
+        "chart": chart
+        }
+
+        raw_data = get_raw_data(parsed_input)
+        logger.info(f"raw_data: { raw_data }")
         
         # PLACEHOLDER: Database querying based on intent
         # This section will be expanded with actual query logic based on intent
@@ -1153,36 +1282,37 @@ Example output:
         # 3. Execute query and retrieve relevant transaction data
         # 4. Perform any necessary aggregations or calculations
         
-        if intent == "total_spent":
+        #if intent == "total_spent":
             # Query for total spending data
             # Placeholder: Will query transactions and sum amounts
-            raw_data = {"total_spent": 0.0, "transaction_count": 0}
+            #raw_data = {"total_spent": 0.0, "transaction_count": 0}
             
-        elif intent == "total_income":
+        #elif intent == "total_income":
             # Query for total income data
             # Placeholder: Will query positive transactions and sum amounts
-            raw_data = {"total_income": 0.0, "income_transactions": []}
+            #raw_data = {"total_income": 0.0, "income_transactions": []}
             
-        elif intent == "spending_by_category":
+        #elif intent == "spending_by_category":
             # Query for category-based spending data
             # Placeholder: Will query and group by categories
-            raw_data = {"categories": {}, "total_by_category": {}}
+            #raw_data = {"categories": {}, "total_by_category": {}}
             
-        elif intent == "transactions_over_time":
+        #elif intent == "transactions_over_time":
             # Query for time-series transaction data
             # Placeholder: Will query transactions grouped by date
-            raw_data = {"daily_trends": [], "monthly_trends": []}
+            #raw_data = {"daily_trends": [], "monthly_trends": []}
             
-        elif intent == "balance_over_time":
+        #elif intent == "balance_over_time":
             # Query for balance trend data
             # Placeholder: Will calculate running balance over time
-            raw_data = {"balance_trends": [], "starting_balance": 0.0}
+            #raw_data = {"balance_trends": [], "starting_balance": 0.0}
             
-        else:
+        #else:
             # Default: General financial overview
-            raw_data = {"summary": {}, "recent_transactions": []}
+            #raw_data = {"summary": {}, "recent_transactions": []}
         
-        logger.info(f"Database query completed for intent: {intent}")
+        #logger.info(f"Database query completed for intent: {intent}")
+        
         
         # Step 3: Generate AI-powered insights using Gemini
         try:
@@ -1289,44 +1419,25 @@ Example output:
   "insight": {
     "summary": "You spent the most on groceries ($450) this month.",
     "chart": {
-  "data": [
-    {
-      "type": "bar",
-      "x": ["Groceries", "Transportation", "Entertainment"],
-      "y": [450, 300, 200],
-      "marker": {
-        "color": "#4F46E5",
-        "line": {"color": "#FFFFFF", "width": 1}
-      },
-      "hovertemplate": "<b>%{x}</b><br>Amount: $%{y:,.2f}<extra></extra>"
-    }
-  ],
-  "layout": {
-    "title": {
-      "text": "<b>Spending by Category - August 2025</b>",
-      "x": 0.5,
-      "xanchor": "center",
-      "font": {"size": 18, "color": "#374151", "family": "Arial, sans-serif"}
+      "data": [
+        {
+          "type": "bar",
+          "x": ["Groceries", "Transportation", "Entertainment"],
+          "y": [450, 300, 200],
+          "marker": {"color": "rgba(99,110,250,0.7)"}
+        }
+      ],
+      "layout": {
+        "title": "Spending by Category - August 2025",
+        "xaxis": {"title": "Category"},
+        "yaxis": {"title": "Amount ($)"},
+        "margin": {"t": 40, "l": 50, "r": 20, "b": 50},
+        "plot_bgcolor": "white",
+        "paper_bgcolor": "white"
+      }
     },
-    "xaxis": {
-      "title": {"text": "<b>Category</b>", "font": {"size": 14, "color": "#374151"}},
-      "tickfont": {"size": 11, "color": "#374151"},
-      "gridcolor": "#E5E7EB",
-      "showgrid": true
-    },
-    "yaxis": {
-      "title": {"text": "<b>Amount ($)</b>", "font": {"size": 14, "color": "#374151"}},
-      "tickfont": {"size": 11, "color": "#374151"},
-      "tickformat": "$,.0f",
-      "gridcolor": "#E5E7EB",
-      "showgrid": true
-    },
-    "margin": {"t": 60, "l": 80, "r": 40, "b": 60},
-    "plot_bgcolor": "#FAFAFA",
-    "paper_bgcolor": "#FFFFFF",
-    "font": {"family": "Arial, sans-serif", "color": "#374151"}
-  }
-},
+    "explanation": "A bar chart is ideal for comparing spending across categories."
+  },
   "raw_data": {
     "transactions": [
       {"date": "2025-08-02", "merchant": "Whole Foods", "amount": 150, "category": "Groceries"},

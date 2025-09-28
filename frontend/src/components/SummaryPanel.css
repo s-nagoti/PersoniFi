@@ -1,0 +1,215 @@
+/* SummaryPanel styles */
+.summary-panel {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  border: 1px solid #e5e7eb;
+  margin-bottom: 20px;
+}
+
+.summary-panel.error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.summary-panel.empty {
+  border: 2px dashed #d1d5db;
+  background: #f9fafb;
+  text-align: center;
+}
+
+/* Loading state */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 16px;
+}
+
+.loading-state p {
+  color: #6b7280;
+  font-weight: 500;
+  font-size: 16px;
+}
+
+/* Error state */
+.error-content {
+  text-align: center;
+  padding: 20px;
+}
+
+.error-content h3 {
+  color: #dc2626;
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+
+.error-content p {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* Empty state */
+.empty-content {
+  padding: 40px 20px;
+}
+
+.empty-content h3 {
+  color: #374151;
+  margin-bottom: 12px;
+  font-size: 20px;
+}
+
+.empty-content > p {
+  color: #6b7280;
+  font-size: 16px;
+  margin-bottom: 24px;
+}
+
+.suggestions {
+  text-align: left;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.suggestions p {
+  color: #374151;
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.suggestions ul {
+  list-style: none;
+  padding: 0;
+}
+
+.suggestions li {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 6px;
+  padding-left: 16px;
+  position: relative;
+}
+
+.suggestions li::before {
+  content: "💡";
+  position: absolute;
+  left: 0;
+}
+
+/* Summary content */
+.summary-content {
+  padding: 0;
+}
+
+.summary-header {
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+}
+
+.summary-header h3 {
+  color: #1f2937;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.summary-section, .explanation-section {
+  margin-bottom: 20px;
+}
+
+.summary-section:last-child, 
+.explanation-section:last-child {
+  margin-bottom: 0;
+}
+
+.summary-section h4, 
+.explanation-section h4 {
+  color: #374151;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-section h4::before {
+  content: "📋";
+}
+
+.explanation-section h4::before {
+  content: "🔍";
+}
+
+.summary-text {
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.6;
+  margin: 0;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 4px solid #3b82f6;
+}
+
+.explanation-text {
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  padding: 12px 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border-left: 4px solid #6b7280;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .summary-panel {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  
+  .empty-content {
+    padding: 30px 16px;
+  }
+  
+  .loading-state {
+    padding: 30px 16px;
+  }
+  
+  .suggestions {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .summary-panel {
+    padding: 12px;
+  }
+  
+  .empty-content {
+    padding: 20px 12px;
+  }
+  
+  .empty-content h3 {
+    font-size: 18px;
+  }
+  
+  .summary-header h3 {
+    font-size: 16px;
+  }
+  
+  .summary-section h4, 
+  .explanation-section h4 {
+    font-size: 14px;
+  }
+}
+

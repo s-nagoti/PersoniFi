@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import VisualizationPanel from './components/VisualizationPanel';
+import SummaryPanel from './components/SummaryPanel';
 import PromptBox from './components/PromptBox';
 import { askAgent, uploadAndSaveTransactions } from './services/api';
 import './App.css';
@@ -10,6 +11,7 @@ function App() {
   const [error, setError] = useState(null);
   const [insights, setInsights] = useState([]);
   const [currentInsight, setCurrentInsight] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
 
   const handlePromptSubmit = async (prompt) => {
     if (!prompt.trim()) return;
@@ -54,6 +56,7 @@ function App() {
 
     setIsLoading(true);
     setError(null);
+    setUploadedFile(file);
 
     try {
       const response = await uploadAndSaveTransactions(file);
@@ -63,11 +66,18 @@ function App() {
         const transactionCount = response.metadata?.total_transactions || response.data?.length || 0;
         const savedCount = response.save_result?.transactions_inserted || transactionCount;
         
+        const uploadInsight = {
+          summary: `Successfully processed and saved ${savedCount} transactions from ${file.name}`,
+          explanation: `File processed: ${response.metadata?.original_filename || file.name}. ${savedCount} transactions were saved to the database and are ready for analysis.`
+        };
+        
+        setCurrentInsight(uploadInsight);
+        
         setInsights(prev => [...prev, {
           id: Date.now(),
           question: `Uploaded file: ${file.name}`,
-          summary: `Successfully processed and saved ${savedCount} transactions`,
-          explanation: `File processed: ${response.metadata?.original_filename || file.name}. ${savedCount} transactions were saved to the database.`,
+          summary: uploadInsight.summary,
+          explanation: uploadInsight.explanation,
           intent: "file_upload",
           timestamp: new Date().toISOString()
         }]);
@@ -84,26 +94,42 @@ function App() {
     }
   };
 
+  // useEffect to update chart when new data is received
+  useEffect(() => {
+    if (currentInsight?.chart) {
+      console.log('Chart data updated:', currentInsight.chart);
+    }
+  }, [currentInsight]);
+
   return (
     <div className="app">
       <header className="app-header">
         <h1>PersoniFi</h1>
-        <p>AI-Powered Financial Analysis</p>
+        <p>Personal Finance Reimagined</p>
       </header>
       
       <main className="app-main">
-        <VisualizationPanel 
-          chartData={chartData}
-          insights={insights}
-          currentInsight={currentInsight}
-          isLoading={isLoading}
-          error={error}
-        />
+        <div className="content-area">
+          <SummaryPanel 
+            currentInsight={currentInsight}
+            isLoading={isLoading}
+            error={error}
+          />
+          
+          <VisualizationPanel 
+            chartData={chartData}
+            insights={insights}
+            currentInsight={currentInsight}
+            isLoading={isLoading}
+            error={error}
+          />
+        </div>
         
         <PromptBox 
           onPromptSubmit={handlePromptSubmit}
           onFileUpload={handleFileUpload}
           isLoading={isLoading}
+          uploadedFile={uploadedFile}
         />
       </main>
     </div>

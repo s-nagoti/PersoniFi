@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import './PromptBox.css';
 
-const PromptBox = ({ onPromptSubmit, onFileUpload, isLoading }) => {
+const PromptBox = ({ onPromptSubmit, onFileUpload, isLoading, uploadedFile }) => {
   const [prompt, setPrompt] = useState('');
   const fileInputRef = useRef(null);
 
@@ -122,6 +122,13 @@ const PromptBox = ({ onPromptSubmit, onFileUpload, isLoading }) => {
       </form>
       
       <div className="prompt-footer">
+        {uploadedFile && (
+          <div className="uploaded-file-info">
+            <span className="file-icon">📎</span>
+            <span className="file-name">{uploadedFile.name}</span>
+            <span className="file-size">({(uploadedFile.size / 1024).toFixed(1)} KB)</span>
+          </div>
+        )}
         <p className="upload-info">
           📁 Drag & drop files or click Upload • Supported: CSV, Excel (.xlsx, .xls) • Max 10MB
           <br />

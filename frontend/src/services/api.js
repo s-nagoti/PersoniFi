@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 // Base API configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // 30 seconds timeout
+  //timeout: 30000, // 30 seconds timeout
   headers: {
     'Content-Type': 'application/json',
   },
@@ -61,10 +61,12 @@ export const askAgent = async (prompt) => {
   } catch (error) {
     console.error('Error calling ask-agent:', error);
     
+    /*
     // Return mock data for development/testing
     if (process.env.NODE_ENV === 'development') {
       return getMockAgentResponse(prompt);
     }
+      */
     
     throw error;
   }
@@ -130,6 +132,7 @@ const generateSessionId = () => {
  * @param {string} prompt - User prompt
  * @returns {Object} Mock response
  */
+/*
 const getMockAgentResponse = (prompt) => {
   const mockResponses = {
     'spending': {
@@ -261,7 +264,7 @@ const getMockAgentResponse = (prompt) => {
  * Mock response for upload-and-save endpoint (development only)
  * @param {File} file - Uploaded file
  * @returns {Object} Mock upload response
- */
+ 
 const getMockUploadResponse = (file) => {
   return {
     success: true,
@@ -306,5 +309,6 @@ const getMockUploadResponse = (file) => {
     }
   };
 };
+*/
 
 export default api;
